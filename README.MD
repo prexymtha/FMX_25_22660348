@@ -15,15 +15,17 @@ Next, create sub-folders for each question by using, e.g.:
 
 \`\`\`{r}
 
+Do this fo all 5 questions inside ecah question folder we have the following subfolders code , data , output ( subfolders inside this are plots and results )
+
 # PDF Texevier:
 
 Texevier::create_template(directory = “Questions”, template_name =
-“Question1” )
+“Q1” )
 
 # HTML Texevier:
 
 Texevier::create_template_html(directory = “Questions”, template_name =
-“Question2” )
+“Q2” )
 
 \`\`\`
 
