@@ -404,116 +404,18 @@ Hold_Rets <- read_rds("data/Hold_Rets_Sectors.rds")
 ```
 
 Winsorise to remove outliers 
-```{r}
-
-Hold_Rets <- Hold_Rets %>%
-  mutate(Return_wins = Winsorize(Return, probs = c(0.01, 0.99)))
-complete()
-```
 
 
-Summary statistics
-```{r}
-Hold_Rets %>%
-  group_by(Group) %>%
-  summarise(
-    mean_return = mean(Return, na.rm = TRUE),
-    sd_return = sd(Return, na.rm = TRUE),
-    min_return = min(Return, na.rm = TRUE),
-    max_return = max(Return, na.rm = TRUE),
-    skewness = e1071::skewness(Return, na.rm = TRUE),
-    kurtosis = e1071::kurtosis(Return, na.rm = TRUE)
-  )
-
-```
 
 
-Distributional properties (log these returns) check univarate practical for better diagrams
-```{r}
-Hold_Rets %>%
-  ggplot(aes(x = Return, fill = Group)) +
-  geom_histogram(bins = 100, alpha = 0.6, position = "identity") +
-  facet_wrap(~ Group, scales = "free_y") +
-  theme_minimal() +
-  labs(title = "Distribution of Daily Returns by Size Group")
-```
-
-Annualised volatility
-
-```{r}
-Hold_Rets %>%
-  group_by(Tickers, Group, year = lubridate::year(date)) %>%
-  summarise(
-    sd_daily = sd(Return, na.rm = TRUE),
-    annual_vol = sd_daily * sqrt(252) # where 252 is the appropriate trading days in a year 
-  )
-
-```
-
-
-Are smaller stocks more volatile
-```{r}
-var.test(Return ~ Group, data = Hold_Rets %>% filter(Group %in% c("Small_Caps", "Large_Caps")))
-
-```
-
-
-Maximum drawdowns
-```{r}
-library(PerformanceAnalytics)
-Hold_Rets %>%
-  group_by(Tickers, Group, Sector, year = lubridate::year(date)) %>%
-  summarise(
-    mdd = maxDrawdown(Return, geometric = TRUE)
-  )
-```
-
-```{r}
-Hold_Rets %>%
-  group_by(Group, year = lubridate::year(date)) %>%
-  summarise(
-    annual_vol = sd(Return, na.rm = TRUE) * sqrt(252),
-    mdd = maxDrawdown(Return, geometric = TRUE)
-  ) %>%
-  ggplot(aes(x = year, y = annual_vol, color = Group)) +
-  geom_line() +
-  facet_wrap(~ Group) +
-  labs(title = "Annualized Volatility by Size Group Over Time")
-```
-
-
-MAD
-
-```{r}
-
-Hold_Rets %>%
-  group_by(Group) %>%
-  summarise(
-    mad = mad(Return, na.rm = TRUE),
-    semi_dev = PerformanceAnalytics::SemiDeviation(Return)
-  )
-```
 **Short descriptive title:** Peak to trough ranges and volatility across size and sector groups
 
 Volatility clustering 
 
-```{r}
-library(rugarch)
-spec <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1,1)),
-                   mean.model = list(armaOrder = c(0,0)))
-fit <- ugarchfit(spec, data = returns)
-```
+
 Weight and risk
 
-```{r}
-Hold_Rets %>%
-  group_by(Tickers) %>%
-  summarise(
-    mean_weight = mean(Weight, na.rm = TRUE),
-    annual_vol = sd(Return, na.rm = TRUE) * sqrt(252),
-    mdd = maxDrawdown(Return, geometric = TRUE)
-  ) %>%
-  lm(annual_vol ~ mean_weight + Group + Sector, data = .)
+
 ```
 #### 5.2.1 Aim of the question
 
@@ -880,33 +782,7 @@ library(rmgarch)
 
 ```{r}
 #Now set the specifications for the go garch
-uspec <- ugarchspec(variance.model = list(model = "gjrGARCH", 
-    garchOrder = c(1, 1)), mean.model = list(armaOrder = c(1, 
-    0), include.mean = TRUE), distribution.model = "sstd")
 
-multi_univ_garch_spec <- multispec(replicate(ncol(xts_rtn), uspec))
-
-spec.go <- gogarchspec(multi_univ_garch_spec, 
-                       distribution.model = 'mvnorm', # or manig.
-                       ica = 'fastica') # Note: we use the fastICA
-cl <- makePSOCKcluster(10)
-multf <- multifit(multi_univ_garch_spec, xts_rtn, cluster = cl)
-
-fit.gogarch <- gogarchfit(spec.go, 
-                      data = xts_rtn, 
-                      solver = 'hybrid', 
-                      cluster = cl, 
-                      gfun = 'tanh', 
-                      maxiter1 = 40000, 
-                      epsilon = 1e-08, 
-                      rseed = 100)
-
-gog.time.var.cor <- rcor(fit.gogarch)
-gog.time.var.cor <- aperm(gog.time.var.cor,c(3,2,1))
-dim(gog.time.var.cor) <- c(nrow(gog.time.var.cor), ncol(gog.time.var.cor)^2)
-# Finally:
-gog.time.var.cor <-
-renamingdcc(ReturnSeries = xts_rtn, DCC.TV.Cor = gog.time.var.cor)
 renamingdcc <- function(ReturnSeries, DCC.TV.Cor) {
   # ReturnSeries: xts matrix of returns
   # DCC.TV.Cor:   T x (N^2) matrix after reshaping the rcor output
@@ -916,21 +792,79 @@ renamingdcc <- function(ReturnSeries, DCC.TV.Cor) {
   names <- colnames(ReturnSeries)
   
   # Build pair names in the same order as vectorised correlations
-  pairs <- expand.grid(names, names)
+  pairs      <- expand.grid(names, names)
   pair_names <- paste0(pairs$Var1, "_", pairs$Var2)
   
   df <- as.data.frame(DCC.TV.Cor)
   colnames(df) <- pair_names
-  df$date <- dates
+  df$date      <- dates
   
   df %>% 
     tidyr::pivot_longer(
-      cols = -date,
+      cols      = -date,
       names_to  = "Pairs",
       values_to = "Rho"
     ) %>% 
     dplyr::arrange(date)
 }
+
+# ------------------------------------------------------------------------------
+# GO GARCH specification and estimation
+# ------------------------------------------------------------------------------
+
+# Univariate GARCH spec for each series
+uspec <- ugarchspec(
+  variance.model = list(
+    model      = "gjrGARCH",
+    garchOrder = c(1, 1)
+  ),
+  mean.model = list(
+    armaOrder    = c(1, 0),
+    include.mean = TRUE
+  ),
+  distribution.model = "sstd"
+)
+
+# Replicate univariate spec across all return series
+multi_univ_garch_spec <- multispec(replicate(ncol(xts_rtn), uspec))
+
+# GO GARCH spec (multivariate)
+spec.go <- gogarchspec(
+  multi_univ_garch_spec,
+  distribution.model = "mvnorm",   # or "manig"
+  ica                = "fastica"   # fastICA
+)
+
+# Parallel cluster for speed
+cl <- makePSOCKcluster(10)
+
+# Fit univariate models jointly
+multf <- multifit(multi_univ_garch_spec, xts_rtn, cluster = cl)
+
+# Fit GO GARCH model
+fit.gogarch <- gogarchfit(
+  spec    = spec.go,
+  data    = xts_rtn,
+  solver  = "hybrid",
+  cluster = cl,
+  gfun    = "tanh",
+  maxiter1 = 40000,
+  epsilon  = 1e-08,
+  rseed    = 100
+)
+
+stopCluster(cl)
+
+# ------------------------------------------------------------------------------
+# Extract and tidy time varying correlations
+# ------------------------------------------------------------------------------
+
+gog.time.var.cor <- rcor(fit.gogarch)               # array: N x N x T
+gog.time.var.cor <- aperm(gog.time.var.cor, c(3, 2, 1))
+dim(gog.time.var.cor) <- c(
+  nrow(gog.time.var.cor),
+  ncol(gog.time.var.cor)^2
+)
 
 gog.time.var.cor <- renamingdcc(
   ReturnSeries = xts_rtn,
