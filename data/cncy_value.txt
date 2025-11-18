@@ -1,0 +1,11 @@
+Definition of DBPPPUSF:
+
+
+
+We use the Deutsche Bank FX PPP Index as the proxy for the returns of a value
+strategy. To gauge relative value, Deutsche Bank prepares a ranking based on the
+average daily spot rate over the last three months divided by the PPP exchange rate as
+published annually by the OECD. The FX PPP index reflects the return of being long
+the 3 currencies with the highest rank (undervalued currencies) against being short the
+3 currencies with the lowest rank (overvalued currencies) within G10 currency
+universe. The Bloomberg code for this factor is DBPPPUSF Index

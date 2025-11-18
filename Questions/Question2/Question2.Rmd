@@ -1,0 +1,204 @@
+---
+title: "Paged HTML Document"
+author: "NF Katzke"
+date: "November 2021"
+# date: "`r Sys.Date()`"
+bibliography: Tex/ref.bib       # Do not edit: Keep this naming convention and location.
+output:
+  pagedown::html_paged:
+    # template: wp_paged.html
+    # css: ['wp.css', 'wp-fonts.css', 'wp-page.css']
+    css: ["Template/default-fonts-Texevier.css", "Template/default-page-Texevier.css", "Template/default-Texevier.css"]
+    csl: Template/harvard-stellenbosch-university.csl # referencing format used.
+    template: ["Template/paged-Texevier.html"]
+
+    toc: true
+    # change to true for a self-contained document, but it'll be a litte slower for Pandoc to render
+    self_contained: TRUE
+abstract: |
+    This is an abstract. Much can be written here. Uncomment this line to go without an abstract.
+    Abstracts have no spaces, but can have bullets.
+
+    Bullets can be created as follows
+
+    + You can add bullets, but do not add colons please.
+
+    + Line breaks are also not permitted.
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message=FALSE, warning=FALSE)
+pacman::p_load(modelsummary, gt, knitr, kableExtra, tidyverse)
+```
+
+\newpage
+
+# Introduction {-}
+
+References are to be made as follows: [@fama1997] and @grinold2000 Such authors could also be referenced in brackets [@grinold2000] and together [@fama1997 \& @grinold2000]. Source the reference code from scholar.google.com by clicking on ``cite'' below article name. Then select BibTeX at the bottom of the Cite window, and proceed to copy and paste this code into your ref.bib file, located in the directory's Tex folder. Open this file in Rstudio for ease of management, else open it in your preferred Tex environment. Add and manage your article details here for simplicity - once saved, it will self-adjust in your paper.
+
+> I suggest renaming the top line after \@article, as done in the template ref.bib file, to something more intuitive for you to remember. Do not change the rest of the code. Also, be mindful of the fact that bib references from google scholar may at times be incorrect. Reference Latex forums for correct bibtex notation.
+
+Writing in Rmarkdown is surprizingly easy - see [this website](https://www.rstudio.com/wp-content/uploads/2015/03/rmarkdown-reference.pdf) cheatsheet for a summary on writing Rmd writing tips.
+
+# Data  {-}
+
+Notice how I used the curly brackets and dash to remove the numbering of the data section.
+
+Discussion of data should be thorough with a table of statistics and ideally a figure.
+
+In your tempalte folder, you will find a Data and a Code folder. In order to keep your data files neat, store all of them in your Data folder. Also, I strongly suggest keeping this Rmd file for writing and executing commands, not writing out long pieces of data-wrangling. In the example below, I simply create a ggplot template for scatter plot consistency. I suggest keeping all your data in a data folder.
+
+<!-- The following is a code chunk. It must have its own unique name (after the r), or no name. After the comma follows commands for R which are self-explanatory. By default, the code and messages will not be printed in your pdf, just the output: -->
+
+```{r }
+
+  # This is just a random plot to show you a plot. This is done if the getwd() does not point to your Template's directory.
+  # Set WD below to your project's working directory.
+
+  g <-
+  ggplot(data = mtcars) +
+  geom_point(aes(x = disp, y = hp, color = cyl)) +
+  theme_bw() +
+  # theme(legend.position = "none") +
+  theme(plot.title = element_text(size = 10)) +
+  theme(axis.title = element_text(size = 10),
+        axis.title.x = element_text()) +
+  labs(y = "y-axis", x = "x-axis", title = "Some amazing plot")
+
+g
+
+```
+
+
+
+
+
+#  Methodology \label{Meth} {-}
+
+## Subsection {-}
+Ideally do not overuse subsections. It equates to bad writing.^[This is an example of a footnote by the way. Something that should also not be overused.]
+
+## Math section {-}
+
+Equations should be written as such:
+
+\begin{align}
+\beta = \sum_{i = 1}^{\infty}\frac{\alpha^2}{\sigma_{t-1}^2} \label{eq1} \\
+\int_{x = 1}^{\infty}x_{i} = 1 \notag
+\end{align}
+
+If you would like to see the equations as you type in Rmarkdown, use $ symbols instead (see this for yourself by adjusted the equation):
+
+$$
+\beta = \sum_{i = 1}^{\infty}\frac{\alpha^2}{\sigma_{t-1}^2} \\
+\int_{x = 1}^{\infty}x_{i} = 1
+$$
+
+Note again the reference to equation \ref{eq1}. Writing nice math requires practice. Note I used a forward slashes to make a space in the equations. I can also align equations using  __\&__, and set to numbering only the first line. Now I will have to type ``begin equation'' which is a native \LaTeX command. Here follows a more complicated equation:
+
+
+\begin{align}
+	y_t &= c + B(L) y_{t-1} + e_t   \label{eq2}    \\ \notag
+	e_t &= H_t^{1/2}  z_t ; \quad z_t \sim  N(0,I_N) \quad \& \quad H_t = D_tR_tD_t \\ \notag
+		D_t^2 &= {\sigma_{1,t}, \dots, \sigma_{N,t}}   \\ \notag
+		\sigma_{i,t}^2 &= \gamma_i+\kappa_{i,t}  v_{i, t-1}^2 +\eta_i  \sigma_{i, t-1}^2, \quad \forall i \\ \notag
+		R_{t, i, j} &= {diag(Q_{t, i, j}}^{-1}) . Q_{t, i, j} . diag(Q_{t, i, j}^{-1})  \\ \notag
+		Q_{t, i, j} &= (1-\alpha-\beta)  \bar{Q} + \alpha  z_t  z_t'  + \beta  Q_{t, i, j} \notag
+\end{align}
+
+Note that in \ref{eq2} I have aligned the equations by the equal signs. I also want only one tag, and I create spaces using ``quads''.
+
+See if you can figure out how to do complex math using the two examples provided in \ref{eq1} and \ref{eq2}.
+
+<!-- $$ -->
+<!-- This is a commented out section in the writing part. -->
+<!-- Comments are created by highlighting text, amnd pressing CTL+C -->
+<!-- \\begin{align} -->
+<!-- \\beta = \\alpha^2 -->
+<!-- \end{align} -->
+<!-- $$ -->
+
+## Results {-}
+
+Tables can be included as follows. Use the _xtable_ (or kable) package for tables. Table placement = H implies Latex tries to place the table Here, and not on a new page (there are, however, very many ways to skin this cat. Luckily there are many forums online!).
+
+```{r table-1, echo=TRUE, message=FALSE, warning=FALSE, results="asis"}
+library(knitr)
+library(kableExtra)
+
+data <- mtcars[1:5,] %>% tibble::as_tibble()
+
+table <- kable(data, row.names = TRUE,
+      caption = 'Table with kable() and kablestyling()',
+      format = "html", booktabs = T) %>%
+        kable_styling(full_width = T,
+                      latex_options = c("striped",
+                                        "scale_down",
+                                        "HOLD_position"),
+                      font_size = 13)
+table
+```
+
+To reference calculations __in text__, _do this:_ From table \@ref(tab:table-1) we see the average value of mpg is `r mean(mtcars[1:5,]$mpg)`. Notice the use of table-2 in the chunk name. That's the good stuff.
+
+\newpage
+
+
+## Model summary
+
+
+Check [this](https://vincentarelbundock.github.io/modelsummary/articles/modelsummary.html) link out for more. Note this package also plays nicely with gt, kableExtra, etc.
+
+```{r}
+
+library(modelsummary);library(gt)
+
+# modelsummary works well with gt:
+
+Tab <-
+
+datasummary_skim(swiss,
+type="numeric",
+ histogram=T,
+ title = "Summary: Numeric variables", output = "gt") %>%
+
+        # column labels
+    tab_spanner(label = 'Statistics', columns = c("Mean", "SD")) %>%
+    tab_spanner(label = 'Quantiles', columns = starts_with("P")) %>%
+    # footnote
+    tab_footnote(footnote = md("A very **important** Footnote."),
+                 locations = cells_body(rows = 3, columns = 1)) %>%
+
+    tab_options(data_row.padding = px(4),table.width = pct(60),
+            column_labels.font.size = pct(100),
+            column_labels.vlines.width = 1, table.font.size = pct(60))
+
+Tab
+```
+
+
+
+```{r}
+
+datasummary_correlation(mtcars)
+
+```
+
+
+# References {-}
+
+<div id="refs"></div>
+
+
+# Appendix {-}
+
+## Appendix A {-}
+
+Some appendix information here
+
+## Appendix B {-}
+
+
+

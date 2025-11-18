@@ -1,0 +1,3 @@
+Definition of BBDXY:
+
+The Bloomberg Dollar Spot Index (BBDXY) tracks the performance of a basket of 10 leading global currencies versus the U.S. Dollar. It has a dynamically updated composition and represents a diverse set of currencies that are important from trade and liquidity perspectives..

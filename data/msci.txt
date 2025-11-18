@@ -1,0 +1,3 @@
+Definition of MSCI series:
+
+These are daily Total Return series for MSCI funds. The names are self-explanatory, with MSCI_RE being the global real estate fund, MSCI_USREIT being the US real estate fund, and MSCI_ACWI the MSCI All Country World Index.

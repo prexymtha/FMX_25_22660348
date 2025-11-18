@@ -1,0 +1,3 @@
+Definition of JPMVXYG7:
+
+We use The VXY and EM-VXY indexes follow aggregate volatility in currencies through a turnover-weighted index of G7 and emerging market volatility, based on three-month at-the-money forward options. The indexes are designed to allow investors to measure aggregate risk premiums in currency markets, calibrate trading strategies and express views on volatility as an asset class.

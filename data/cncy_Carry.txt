@@ -1,0 +1,9 @@
+Definition of DBHVG10U:
+
+We use the Deutsche Bank G10 Harvest Index as the proxy for the returns of a carry
+strategy.
+ This index reflects the return of being long the 3 high-yielding currencies
+against being short the 3 low-yielding currencies within the G10 currency universe.
+The index is rebalanced quarterly. Every quarter the currencies are re-ranked
+according to their current 3-month Libor rate. The Bloomberg code for this factor is
+DBHVG10U Index

@@ -1,0 +1,5 @@
+Definition of cncyIV:
+
+
+
+Currency Implied volatility is, in principle, similar to the construction of the VIX index. It uses both put and call option premiums to guage the market's forward implied volatility of the currency. A higher value indicates the market foresees higher future volatility for a currency.
