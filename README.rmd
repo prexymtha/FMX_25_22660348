@@ -944,6 +944,7 @@ msci <- read_rds("data/msci.rds") %>%
 ```
 
 
+
 **Short descriptive title:** Global balanced index style portfolio construction
 
 #### 5.5.1 Aim of the question
