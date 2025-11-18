@@ -180,7 +180,7 @@ The Texevier templates are used to present selected results neatly for some ques
 
 ## 3. Repository structure
 
-The project is organised by question. Each question Q1 to Q7 has its own folder with a consistent internal layout. Within each question folder there are subfolders for code, data and outputs.
+The project is organised by question. Each question Q1 to Q5 has its own folder with a consistent internal layout. Within each question folder there are subfolders for code, data and outputs.
 
 The overall layout is as follows
 
@@ -216,20 +216,6 @@ The overall layout is as follows
 │       └── results/
 │
 ├── Q5/
-│   ├── code/
-│   ├── data/
-│   └── output/
-│       ├── plots/
-│       └── results/
-│
-├── Q6/
-│   ├── code/
-│   ├── data/
-│   └── output/
-│       ├── plots/
-│       └── results/
-│
-├── Q7/
 │   ├── code/
 │   ├── data/
 │   └── output/
