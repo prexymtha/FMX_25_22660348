@@ -11,7 +11,7 @@
 
 
 
-<title>README</title>
+<title>README.knit</title>
 
 <script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
 // be compatible with the behavior of Pandoc < 2.8).
@@ -498,9 +498,14 @@ are stored within individual question folders.</li>
 </div>
 <div id="repository-structure" class="section level2">
 <h2>3. Repository structure</h2>
-<p>The repository is organised by question. Each question (Q1 to Q5) has
-its own folder with a consistent internal structure. The only README in
-the project is this file at the root level.</p>
+<p>&lt;&lt;&lt;&lt;&lt;&lt;&lt; HEAD The repository is organised by
+question. Each question (Q1 to Q5) has its own folder with a consistent
+internal structure. The only README in the project is this file at the
+root level. ======= The project is organised by question. Each question
+Q1 to Q5 has its own folder with a consistent internal layout. Within
+each question folder there are subfolders for code, data and outputs.
+&gt;&gt;&gt;&gt;&gt;&gt;&gt;
+e8f9c0f8dde4d7b475a8d57f9309773761408aaa</p>
 <p>A schematic folder layout is as follows. The exact names of the top
 level question folders may follow the Texevier template (for example
 “Q1” or “Question1”), but the internal structure for each is
@@ -598,6 +603,81 @@ follow the same logic across all five questions.</p>
 <hr />
 <div id="question-1-portfolio-return-comparison" class="section level3">
 <h3>Question 1: Portfolio return comparison</h3>
+<p>First we inspect the provided dataset (long-time series , long panel
+time series and long time series)</p>
+<pre class="r"><code># Load readr using pacman
+pacman::p_load(readr)
+
+# Load the data
+Benchmark &lt;- read_rds(&quot;data/Capped_SWIX.rds&quot;)
+Active_Managers &lt;- read_rds(&quot;data/Active_Managers.rds&quot;)
+ABC_Fund &lt;- read_rds(&quot;data/ABC_Fund.rds&quot;)</code></pre>
+<hr />
+</div>
+</div>
+<div id="data-overview-portfolio-return-comparison" class="section level2">
+<h2>Data Overview — Portfolio Return Comparison</h2>
+<p>This analysis uses three monthly return datasets to analyse peer
+performance and benchmark comparisons:</p>
+<hr />
+<div id="abc_fund" class="section level3">
+<h3><strong>1. <code>ABC_Fund</code></strong></h3>
+<ul>
+<li><strong>Observations:</strong> 160 monthly records (starting July
+2012)</li>
+<li><strong>Variables:</strong>
+<ul>
+<li><code>date</code>: Monthly timestamps (e.g.,
+<code>&quot;2012-07-31&quot;</code>)</li>
+<li><code>Returns</code>: Numeric monthly return values (e.g.,
+<code>0.03499</code>)</li>
+<li><code>Name</code>: Constant label <code>&quot;ABC_Fund&quot;</code></li>
+</ul></li>
+<li><strong>Purpose:</strong> Represents the performance of the focal
+fund under analysis. Used to assess relative performance, beta exposure,
+and dispersion sensitivity.</li>
+</ul>
+<hr />
+</div>
+<div id="active_managers" class="section level3">
+<h3><strong>2. <code>Active_Managers</code></strong></h3>
+<ul>
+<li><strong>Observations:</strong> 27,527 rows across multiple
+managers</li>
+<li><strong>Structure:</strong> Each row represents a manager’s return
+for a given month</li>
+<li><strong>Variables:</strong>
+<ul>
+<li><code>date</code>: Monthly timestamps (e.g.,
+<code>&quot;2005-11-30&quot;</code>)</li>
+<li><code>Returns</code>: Numeric monthly return values (e.g.,
+<code>0.03199</code>)</li>
+<li><code>Name</code>: Manager identifiers (e.g., <code>&quot;A1&quot;</code>,
+<code>&quot;B2&quot;</code>, <code>&quot;C3&quot;</code>, etc.)</li>
+</ul></li>
+<li><strong>Purpose:</strong> Provides a cross-section of peer fund
+returns for benchmarking and dispersion analysis.</li>
+</ul>
+<hr />
+</div>
+<div id="benchmark" class="section level3">
+<h3><strong>3. <code>Benchmark</code></strong></h3>
+<ul>
+<li><strong>Observations:</strong> 311 monthly records (starting
+December 1999)</li>
+<li><strong>Variables:</strong>
+<ul>
+<li><code>date</code>: Monthly timestamps (e.g.,
+<code>&quot;1999-12-31&quot;</code>)</li>
+<li><code>Name</code>: Constant label
+<code>&quot;FTSE/JSE Capped SWIX&quot;</code></li>
+<li><code>Returns</code>: Numeric monthly return values (e.g.,
+<code>0.13111</code>)</li>
+</ul></li>
+<li><strong>Purpose:</strong> Serves as the industry benchmark index for
+evaluating fund and peer performance.</li>
+</ul>
+<hr />
 <p><strong>Short descriptive title:</strong> Portfolio return comparison
 and peer analysis for ABC Fund</p>
 <div id="aim-of-the-question" class="section level4">
@@ -691,6 +771,10 @@ or published articles, without reproducing full derivations.</p>
 </div>
 <div id="question-2-peaks-and-troughs" class="section level3">
 <h3>Question 2: Peaks and troughs</h3>
+<pre class="r"><code># Load readr using pacman
+pacman::p_load(readr)
+# Load the data
+Hold_Rets &lt;- read_rds(&quot;data/Hold_Rets_Sectors.rds&quot;)</code></pre>
 <p><strong>Short descriptive title:</strong> Peak to trough ranges and
 volatility across size and sector groups</p>
 <div id="aim-of-the-question-1" class="section level4">
@@ -748,6 +832,13 @@ textbooks.</p>
 </div>
 <div id="question-3-momentum" class="section level3">
 <h3>Question 3: Momentum</h3>
+<pre class="r"><code># Load readr using pacman
+pacman::p_load(readr)
+
+
+# Load the data
+Port_Holds &lt;- read_rds(&quot;data/Fund_Holds.rds&quot;)
+Hold_Rets &lt;- read_rds(&quot;data/Hold_Rets_Sectors.rds&quot;)</code></pre>
 <p><strong>Short descriptive title:</strong> Momentum as an investment
 signal and comparison with a local equity fund</p>
 <div id="aim-of-the-question-2" class="section level4">
@@ -807,6 +898,15 @@ relevant.</p>
 </div>
 <div id="question-4-volatility-and-garch-estimates" class="section level3">
 <h3>Question 4: Volatility and GARCH estimates</h3>
+<pre class="r"><code># Load readr using pacman
+pacman::p_load(readr)
+
+# Load the data
+cncy &lt;- read_rds(&quot;data/currencies.rds&quot;)
+cncy_Carry &lt;- read_rds(&quot;data/cncy_Carry.rds&quot;)
+cncy_Value &lt;- read_rds(&quot;data/cncy_value.rds&quot;)
+cncyIV &lt;- read_rds(&quot;data/cncyIV.rds&quot;)
+bbdxy &lt;- read_rds(&quot;data/bbdxy.rds&quot;)</code></pre>
 <p><strong>Short descriptive title:</strong> Currency volatility, rand
 behaviour and GARCH based measures</p>
 <div id="aim-of-the-question-3" class="section level4">
@@ -859,6 +959,18 @@ which variance equations or test statistics I rely on.</p>
 </div>
 <div id="question-5-portfolio-construction" class="section level3">
 <h3>Question 5: Portfolio construction</h3>
+<pre class="r"><code># Load readr and dplyr using pacman
+pacman::p_load(readr, dplyr)
+
+# Load and filter MAA data
+MAA &lt;- read_rds(&quot;data/MAA.rds&quot;) %&gt;%
+  filter(Ticker %in% c(&quot;LUACTRUU Index&quot;, &quot;LUAGTRUU Index&quot;,
+                       &quot;BCOMTR Index&quot;, &quot;LP05TREH Index&quot;))
+
+# Load and filter MSCI data
+msci &lt;- read_rds(&quot;data/msci.rds&quot;) %&gt;%
+  filter(Name %in% c(&quot;MSCI ACWI&quot;, &quot;MSCI USA&quot;, &quot;MSCI RE&quot;,
+                     &quot;MSCI Jap&quot;, &quot;MSCI China&quot;))</code></pre>
 <p><strong>Short descriptive title:</strong> Global balanced index style
 portfolio construction</p>
 <div id="aim-of-the-question-4" class="section level4">
