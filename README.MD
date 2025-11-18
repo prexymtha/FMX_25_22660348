@@ -1,13 +1,14 @@
-# Financial Econometrics 871 Practical Examination 2025
 
-SU number: 22660348
-Author: Precious Nhamo
-Course: Financial Econometrics 871
-Lecturer: NF Katzke
-Internal moderator: Prof G Liu
-Dates: 18–19 November 2025
+# Financial Econometrics 871 Practical Exam
+
+**SU Number:** 22660348  
+**Author:** Precious Nhamo  
+**Course:** Financial Econometrics 871  
+**Dates:** 18–19 November 2025
 
 ---
+
+
 
 ## Table of Contents
 
