@@ -1,6 +1,7 @@
 ---
-title: "Question 5: Global Balanced Index Fund"
 output: html_document
+editor_options: 
+  chunk_output_type: console
 ---
 
 ### Question 4: Volatility and GARCH estimates
