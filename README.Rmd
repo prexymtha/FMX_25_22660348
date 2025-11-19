@@ -3,6 +3,16 @@ output: html_document
 editor_options: 
   chunk_output_type: console
 ---
+# Financial Econometrics 871 Practical Exam
+
+**SU Number:** 22660348  
+**Author:** Precious Nhamo  
+**Course:** Financial Econometrics 871  
+**Dates:** 18–19 November 2025
+
+
+
+---
 
 ### Question 4: Volatility and GARCH estimates
 
