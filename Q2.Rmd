@@ -1,0 +1,321 @@
+---
+title: "Q2"
+output: html_document
+---
+```{r load-data-Q2, echo = TRUE}
+# Load readr using pacman
+pacman::p_load(
+  readr,
+  tidyverse,
+  lubridate,
+  tbl2xts,
+  PerformanceAnalytics,
+  rmsfuns,
+  fmxdat,
+  DescTools
+)
+
+# Load the data
+Hold_Rets <- read_rds("data/Hold_Rets_Sectors.rds") 
+
+head(Hold_Rets)
+```
+
+To answer the first part of small stocks being highly volatile compared to larger stocks I will annualise the returns for the decade as requested by the question - I will also categorise the returns with their groups as either being small_cap or large_cap
+
+
+In the lecturer’s notes, volatility (risk) is explicitly defined and measured using the standard deviation of returns, and we are told that:
+
+Standard deviation should be annualised when we compare different time periods.
+
+The usual shortcut SD * sqrt(12) is only theoretically correct when we work with logarithmic returns, because annual log return is the sum of monthly log returns, which justifies the square root of time rule.
+
+So, to be consistent with the notes and to get a clean, comparable volatility measure, I:
+
+Construct value weighted indices for small caps and large caps.
+
+Convert their monthly simple returns to log returns using log(1 + ret).
+
+Compute a 36 month rolling standard deviation of these log monthly returns.
+
+Annualise that rolling SD by multiplying by sqrt(12).
+
+This gives me a rolling annualised standard deviation of returns for small caps and large caps over the past decade. Comparing these two series over time is a direct, textbook implementation of the lecturer’s definition of volatility, so it is an appropriate way to answer 2(i): if the small cap series has a consistently higher annualised SD, we can conclude that smaller stocks have been more volatile than larger stocks locally.
+
+```{r}
+options(dplyr.summarise.inform = FALSE)
+
+library(tidyverse)
+library(lubridate)
+library(tbl2xts)
+library(PerformanceAnalytics)
+library(RcppRoll)
+library(fmxdat)   # for safe_month_min, theme_fmx, fmx_cols, fmx_fills etc
+
+# Start from your data
+# Hold_Rets has: date, Tickers, Return, Weight, Group, Sector
+
+Hold_Rets_decade <- 
+  Hold_Rets %>% 
+  filter(Group %in% c("Small_Caps", "Large_Caps")) %>% 
+  mutate(year = year(date)) %>% 
+  filter(year >= max(year) - 9) %>%   # last 10 calendar years
+  select(-year)
+
+
+```
+
+
+```{r}
+# 1a. Daily value-weighted size index returns (Small vs Large)
+idx_daily <- 
+  Hold_Rets_decade %>% 
+  group_by(date, Group) %>% 
+  summarise(
+    ret = sum(Weight * Return, na.rm = TRUE) / sum(Weight, na.rm = TRUE),
+    .groups = "drop"
+  ) %>% 
+  rename(Tickers = Group) %>%      # so Tickers is "Small_Caps" / "Large_Caps"
+  arrange(Tickers, date)
+
+# 1b. Make returns monthly for illustration (Nico style)
+idx <- 
+  idx_daily %>% 
+  mutate(YM = format(date, "%Y%B")) %>% 
+  arrange(date) %>% 
+  group_by(Tickers, YM) %>% 
+  # pick last date of the month and compute monthly return
+  summarise(
+    date = last(date),
+    ret  = prod(1 + ret, na.rm = TRUE) - 1,
+    .groups = "drop"
+  ) %>% 
+  arrange(Tickers, date)
+
+head(idx)
+
+```
+
+
+```{r}
+#======================
+# Manual Calculation:
+#======================
+
+dfplot <- 
+  bind_rows(
+    # 6 months – do NOT annualise (same as Nico)
+    idx %>% 
+      filter(date >= fmxdat::safe_month_min(last(date), N = 6)) %>% 
+      group_by(Tickers) %>% 
+      summarise(mu = prod(1 + ret, na.rm = TRUE) - 1) %>% 
+      mutate(Freq = "A"),
+    
+    # 1 year
+    idx %>% 
+      filter(date >= fmxdat::safe_month_min(last(date), N = 12)) %>% 
+      group_by(Tickers) %>% 
+      summarise(mu = prod(1 + ret, na.rm = TRUE) ^ (12 / 12) - 1) %>% 
+      mutate(Freq = "B"),
+    
+    # 3 years
+    idx %>% 
+      filter(date >= fmxdat::safe_month_min(last(date), N = 36)) %>% 
+      group_by(Tickers) %>% 
+      summarise(mu = prod(1 + ret, na.rm = TRUE) ^ (12 / 36) - 1) %>% 
+      mutate(Freq = "C"),
+    
+    # 5 years
+    idx %>% 
+      filter(date >= fmxdat::safe_month_min(last(date), N = 60)) %>% 
+      group_by(Tickers) %>% 
+      summarise(mu = prod(1 + ret, na.rm = TRUE) ^ (12 / 60) - 1) %>% 
+      mutate(Freq = "D")
+  )
+
+#======================
+# PerformanceAnalytics check
+#======================
+
+idxxts <- 
+  tbl_xts(idx, cols_to_xts = ret, spread_by = Tickers)
+
+dfplotxts <- 
+  bind_rows(
+    idxxts %>% tail(6)  %>% Return.annualized(scale = 12) %>% data.frame() %>% mutate(Freq = "A"),
+    idxxts %>% tail(12) %>% Return.annualized(scale = 12) %>% data.frame() %>% mutate(Freq = "B"),
+    idxxts %>% tail(36) %>% Return.annualized(scale = 12) %>% data.frame() %>% mutate(Freq = "C"),
+    idxxts %>% tail(60) %>% Return.annualized(scale = 12) %>% data.frame() %>% mutate(Freq = "D")
+  ) %>% 
+  data.frame() %>% 
+  tidyr::gather(Tickers, mu, -Freq) %>% 
+  mutate(Tickers = gsub("\\.", " ", Tickers))
+
+# Facet labels
+to_string <- as_labeller(c(
+  `A` = "6 Months", 
+  `B` = "1 Year", 
+  `C` = "3 Years", 
+  `D` = "5 Years"
+))
+
+# Barplot_foo (same style)
+g_ann <- 
+  dfplot %>% 
+  ggplot() + 
+  geom_bar(aes(Tickers, mu, fill = Tickers), stat = "identity") + 
+  facet_wrap(~Freq, labeller = to_string, nrow = 1) + 
+  labs(
+    x = "",
+    y = "Returns (Ann.)",
+    caption = "Note:\nReturns in excess of a year are in annualized terms."
+  ) + 
+  fmx_fills() + 
+  geom_label(
+    aes(Tickers, mu, label = paste0(round(mu, 4) * 100, "%")),
+    size = ggpts(8),
+    alpha = 0.35,
+    fontface = "bold",
+    nudge_y = 0.002
+  ) + 
+  theme_fmx(
+    CustomCaption = TRUE,
+    title.size = ggpts(43),
+    subtitle.size = ggpts(38),
+    caption.size = ggpts(30),
+    axis.size = ggpts(37),
+    legend.size = ggpts(35),
+    legend.pos = "top"
+  ) +
+  theme(
+    axis.text.x  = element_blank(),
+    axis.title.y = element_text(vjust = 2),
+    strip.text.x = element_text(
+      face   = "bold",
+      size   = ggpts(35),
+      margin = margin(.1, 0, .1, 0, "cm")
+    )
+  )
+
+g_ann
+
+```
+
+```{r}
+gg_cum <- 
+  idx %>% 
+  arrange(date) %>% 
+  group_by(Tickers) %>% 
+  mutate(
+    Rets = coalesce(ret, 0),
+    CP   = cumprod(1 + Rets)
+  ) %>% 
+  ungroup() %>% 
+  ggplot() +
+  geom_line(aes(date, CP, colour = Tickers)) +
+  labs(
+    title   = "Illustration of Cumulative Returns of Large vs Small Caps",
+    subtitle = "",
+    caption = "Note:\nDistortions emerge as starting dates differ."
+  ) +
+  theme_fmx(
+    title.size    = ggpts(30),
+    subtitle.size = ggpts(5),
+    caption.size  = ggpts(25),
+    CustomCaption = TRUE
+  )
+
+# Level plot
+gg_cum
+
+# Log cumulative plot
+gg_cum_log <- 
+  gg_cum +
+  coord_trans(y = "log10") +
+  labs(
+    title = paste0(gg_cum$labels$title, "\nLog Scaled"),
+    y     = "Log Scaled Cumulative Returns"
+  )
+
+gg_cum_log
+
+```
+
+```{r}
+plotdf <- 
+  idx %>% 
+  group_by(Tickers) %>% 
+  mutate(
+    RollRets = RcppRoll::roll_prod(1 + ret, 36, fill = NA, align = "right") ^ (12 / 36) - 1
+  ) %>% 
+  group_by(date) %>% 
+  filter(any(!is.na(RollRets))) %>% 
+  ungroup()
+
+g_roll <- 
+  plotdf %>% 
+  ggplot() +
+  geom_line(aes(date, RollRets, colour = Tickers), alpha = 0.7, size = 1.25) +
+  labs(
+    title   = "Rolling 3 Year Annualized Returns: Large vs Small Caps",
+    subtitle = "",
+    x       = "",
+    y       = "Rolling 3 year Returns (Ann.)",
+    caption = "Note:\nDistortions are not evident now."
+  ) +
+  theme_fmx(
+    title.size    = ggpts(30),
+    subtitle.size = ggpts(5),
+    caption.size  = ggpts(25),
+    CustomCaption = TRUE
+  ) +
+  fmx_cols()
+
+finplot(g_roll, x.date.dist = "1 year", x.date.type = "%Y", x.vert = TRUE,
+        y.pct = TRUE, y.pct_acc = 1)
+
+```
+
+
+# This is the answer to the volatility question 
+```{r}
+plot_dlog <- 
+  idx %>% 
+  group_by(Tickers) %>% 
+  # log monthly returns:
+  mutate(ret = log(1 + ret)) %>% 
+  # Rolling SD annualized calc now:
+  mutate(
+    RollSD = RcppRoll::roll_sd(ret, 36, fill = NA, align = "right") * sqrt(12)
+  ) %>% 
+  filter(!is.na(RollSD))
+
+g_sd <- 
+  plot_dlog %>% 
+  ggplot() +
+  geom_line(aes(date, RollSD, colour = Tickers), alpha = 0.7, size = 1.25) +
+  labs(
+    title   = "Rolling 3 Year Annualized SD: Large vs Small Caps",
+    subtitle = "",
+    x       = "",
+    y       = "Rolling 3 year SD (Ann.)",
+    caption = "Note:\nAnnualized SD computed on log monthly returns."
+  ) +
+  theme_fmx(
+    title.size    = ggpts(30),
+    subtitle.size = ggpts(5),
+    caption.size  = ggpts(25),
+    CustomCaption = TRUE
+  ) +
+  fmx_cols()
+
+finplot(g_sd, x.date.dist = "1 year", x.date.type = "%Y", x.vert = TRUE,
+        y.pct = FALSE)
+```
+
+
+Second part (peak and troughs )
+
+We need three graphs that have returns ( of whatever format on the y axis) and year on the x axis since we have already annualised it's easy graph one needs to have a legend by size group ( small caps , large , medium and other ) , the second by sector and the last by size and sector . Group has NA which aren't necessarily missing values but rather unclassified so we shall call them that to remove confusion 
+
+start with the one for return against size groups 

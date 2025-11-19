@@ -1,0 +1,519 @@
+---
+title: "Q4"
+output: html_document
+---
+
+
+
+### Q4: Volatility and GARCH estimates for ZAR
+
+#### 0. Libraries and data
+
+
+```{r Q4-libs-data, echo = TRUE}
+pacman::p_load(
+  tidyverse,
+  devtools,
+  rugarch,
+  rmgarch,
+  forecast,
+  tbl2xts,
+  lubridate,
+  PerformanceAnalytics,
+  ggthemes,
+  robustbase,
+  kableExtra,
+  RcppRoll
+)
+
+# Currency data (all quoted vs USD)
+cncy       <- read_rds("data/currencies.rds")
+cncy_Carry <- read_rds("data/cncy_Carry.rds")   # G10 carry index
+cncy_value <- read_rds("data/cncy_value.rds")   # FX PPP value index
+cncyIV     <- read_rds("data/cncyIV.rds")       # FX implied vol index
+bbdxy      <- read_rds("data/bbdxy.rds")        # Bloomberg Dollar spot index
+
+```
+
+
+
+### 1. Cross sectional volatility: ZAR vs G10 vs others
+
+```{r Q4-vol-panel, echo = TRUE}
+# Construct daily log returns and scaled returns for all currencies
+cncy_rts <- cncy %>%  
+  group_by(Name) %>%  
+  arrange(date, .by_group = TRUE) %>% 
+  mutate(
+    dlogret   = log(Price) - log(lag(Price)),
+    scaledret = dlogret - mean(dlogret, na.rm = TRUE)
+  ) %>% 
+  filter(date > dplyr::first(date)) %>% 
+  ungroup() %>% 
+  mutate(Name = gsub("_Cncy", "", Name))
+
+# Define G10 set in the cleaned Name space
+g10_vec <- c(
+  "Australia_Inv",  # AUD
+  "Canada",         # CAD
+  "EU_Inv",         # EUR
+  "Japan",          # JPY
+  "NZ_Inv",         # NZD
+  "Norway",         # NOK
+  "Sweden",         # SEK
+  "UK_Inv"          # GBP
+  # USD is the base here
+)
+
+# Volatility measures since 2015
+vol_cncy <- cncy_rts %>% 
+  filter(date > ymd(20150101)) %>% 
+  group_by(Name) %>%
+  summarise(
+    std_dev      = sd(dlogret, na.rm = TRUE),
+    mad          = mean(abs(dlogret - mean(dlogret, na.rm = TRUE)), na.rm = TRUE),
+    downside_dev = sqrt(mean(ifelse(dlogret < 0, dlogret^2, 0), na.rm = TRUE)),
+    d_ratio      = (n() - sum(ifelse(dlogret < 0, dlogret, 0))) / 
+                   (n() + sum(ifelse(dlogret > 0, dlogret, 0))),
+    .groups = "drop"
+  ) %>% 
+  mutate(
+    Group = case_when(
+      Name == "SouthAfrica" ~ "ZAR",
+      Name %in% g10_vec     ~ "G10",
+      TRUE                  ~ "Other"
+    )
+  )
+
+# Rank by standard deviation
+ranked_data <- vol_cncy %>% 
+  arrange(desc(std_dev)) %>% 
+  mutate(rank = row_number()) %>% 
+  select(rank, Name, Group, everything())
+
+kableExtra::kable(
+  ranked_data,
+  caption = "Volatility ranking of currencies (log returns, since 2015)",
+  digits = 6
+)
+```
+
+
+
+```{r Q4-vol-plot, echo = TRUE}
+# Identify top 10 by volatility
+vol_with_rank <- vol_cncy %>% 
+  arrange(desc(std_dev)) %>% 
+  mutate(rank = row_number())
+
+# Keep: top 10 *or* any G10 currency
+plot_set <- vol_with_rank %>% 
+  filter(rank <= 10 | Group == "G10")
+
+plot_set %>% 
+  mutate(Name = fct_reorder(Name, std_dev)) %>% 
+  ggplot() +
+  geom_col(aes(x = Name, y = std_dev, fill = Group), alpha = 0.9) +
+  scale_fill_manual(
+    values = c(
+      "ZAR"   = "red",
+      "G10"   = "grey40",
+      "Other" = "grey80"
+    )
+  ) +
+  coord_flip() +
+  labs(
+    title    = "Cross sectional volatility of currencies",
+    subtitle = "Top 10 currencies by volatility plus G10 majors (since 2015)",
+    x = "",
+    y = "Standard deviation",
+    fill = ""
+  ) +
+  fmxdat::theme_fmx()
+
+```
+
+---
+
+
+```{r Q4-zar-persistence, echo = TRUE}
+# Simple returns for ZAR only
+zar_rts <- cncy %>%  
+  filter(date > ymd(20150101)) %>% 
+  group_by(Name) %>%  
+  mutate(ret = Price / lag(Price) - 1) %>% 
+  filter(date > dplyr::first(date)) %>% 
+  ungroup() %>%  
+  mutate(Name = gsub("_Cncy", "", Name)) %>% 
+  filter(Name == "SouthAfrica") %>% 
+  filter(!is.na(ret)) %>% 
+  select(-Name, -Price) %>% 
+  tbl_xts()
+
+# Construct the three series: returns, squared returns, absolute returns
+Plotdata <- cbind(zar_rts, zar_rts^2, abs(zar_rts))
+colnames(Plotdata) <- c("Returns", "Returns_Sqd", "Returns_Abs")
+
+Plotdata <- Plotdata %>% 
+  xts_tbl() %>% 
+  gather(ReturnType, Returns, -date)
+
+ggplot(Plotdata) + 
+  geom_line(aes(x = date, y = Returns, colour = ReturnType, alpha = 0.5)) + 
+  ggtitle("Return Type Persistence: ZAR") + 
+  facet_wrap(~ReturnType, nrow = 3, ncol = 1, scales = "free") + 
+  guides(alpha = "none", colour = "none") + 
+  fmxdat::theme_fmx()
+```
+
+
+```{r Q4-zar-acf, echo = TRUE}
+forecast::Acf(zar_rts,   main = "ACF: ZAR return")
+forecast::Acf(zar_rts^2, main = "ACF: Squared ZAR return")
+forecast::Acf(abs(zar_rts), main = "ACF: Absolute ZAR return")
+
+Box.test(coredata(zar_rts^2), type = "Ljung-Box", lag = 12)
+```
+
+
+---
+
+### 3. Fitting GARCH(1,1) to ZAR (rugarch, copy of Practical 6)
+
+```{r Q4-zar-garch-fit, echo = TRUE}
+# Use the same object name as Nico: porteqw now holds ZAR returns
+porteqw <- zar_rts
+
+# GARCH(1,1) specification as in the notes
+garch11 <- ugarchspec(
+  variance.model = list(
+    model      = c("sGARCH","gjrGARCH","eGARCH","fGARCH","apARCH")[1],
+    garchOrder = c(1, 1)
+  ),
+  mean.model = list(
+    armaOrder    = c(1, 0),
+    include.mean = TRUE
+  ),
+  distribution.model = c("norm", "snorm", "std", "sstd", "ged", "sged", "nig", "ghyp", "jsu")[1]
+)
+
+garchfit1 <- ugarchfit(spec = garch11, data = porteqw)
+
+garchfit1
+```
+
+
+```{r Q4-zar-garch-table, echo = TRUE}
+garch_tab <- garchfit1@fit$matcoef
+kableExtra::kable(garch_tab, caption = "GARCH(1,1) estimates for ZAR")
+```
+
+
+
+Conditional variance plot, identical structure:
+
+
+```{r Q4-zar-sigma-plot, echo = TRUE}
+sigma <- sigma(garchfit1) %>% xts_tbl() 
+colnames(sigma) <- c("date", "sigma") 
+sigma <- sigma %>% mutate(date = as.Date(date))
+
+gg <- ggplot() + 
+  geom_line(
+    data = Plotdata %>% 
+      filter(ReturnType == "Returns_Sqd") %>% 
+      select(date, Returns) %>% 
+      unique() %>% 
+      mutate(Returns = sqrt(Returns)),
+    aes(x = date, y = Returns)
+  ) + 
+  geom_line(
+    data = sigma,
+    aes(x = date, y = sigma),
+    color = "red", size = 2, alpha = 0.8
+  ) + 
+  labs(
+    title    = "Comparison: Returns sigma vs sigma from GARCH",
+    subtitle = "ZAR: note the smoothing effect of GARCH as noise is controlled for.",
+    x = "", y = "Estimated volatility",
+    caption = "Source: Financial econometrics practical | Calculations: Own"
+  ) + 
+  fmxdat::theme_fmx(CustomCaption = TRUE)
+
+fmxdat::finplot(gg, y.pct = TRUE, y.pct_acc = 1)
+
+```
+
+
+News impact curve for the ZAR GARCH model:
+
+
+```{r Q4-zar-nic, echo = TRUE}
+ni <- newsimpact(z = NULL, garchfit1)
+
+plot(
+  ni$zx, ni$zy,
+  ylab = ni$yexpr,
+  xlab = ni$xexpr,
+  type = "l",
+  main = "News Impact Curve: ZAR sGARCH(1,1)"
+)
+
+```
+
+
+
+### 4. Alternative GARCH forms for ZAR (GJR and EGARCH) and NIC comparison
+
+```{r Q4-zar-gjr-egarch, echo = TRUE}
+# GJR GARCH with student t
+gjrgarch11 <- ugarchspec(
+  variance.model = list(
+    model      = c("sGARCH","gjrGARCH","eGARCH","fGARCH","apARCH")[2],
+    garchOrder = c(1, 1)
+  ),
+  mean.model = list(
+    armaOrder    = c(1, 0),
+    include.mean = TRUE
+  ),
+  distribution.model = c("norm", "snorm", "std", "sstd", "ged", "sged", "nig", "ghyp", "jsu")[3]
+)
+
+garchfit2 <- ugarchfit(spec = gjrgarch11, data = as.matrix(porteqw))
+
+kableExtra::kable(
+  garchfit2@fit$matcoef,
+  caption = "GJR GARCH(1,1) with student t distribution for ZAR"
+)
+
+# EGARCH(1,1) with student t
+egarch11 <- ugarchspec(
+  variance.model = list(
+    model      = c("sGARCH","gjrGARCH","eGARCH","fGARCH","apARCH")[3],
+    garchOrder = c(1, 1)
+  ),
+  mean.model = list(
+    armaOrder    = c(1, 0),
+    include.mean = TRUE
+  ),
+  distribution.model = c("norm", "snorm", "std", "sstd", "ged", "sged", "nig", "ghyp", "jsu")[3]
+)
+
+garchfit3 <- ugarchfit(spec = egarch11, data = as.matrix(porteqw))
+
+# Sign bias and info criteria, as in Nico’s notes
+signbias(garchfit1)
+infocriteria(garchfit1)
+infocriteria(garchfit2)
+infocriteria(garchfit3)
+
+```
+
+
+
+News impact curves for all three, identical helper function:
+
+
+```{r Q4-zar-nic-compare, echo = TRUE}
+NICurveMaker <- function(Fit, Name) {
+  NI <- newsimpact(z = NULL, Fit)
+  NI <- cbind(NI$zx, NI$zy)
+  colnames(NI) <- c(paste0("Epsilon_", Name), paste0("Sigma_", Name))
+  NI %>% data.frame() %>% tibble::as_tibble()
+}
+
+NI1 <- NICurveMaker(garchfit1, "GARCH11")
+NI2 <- NICurveMaker(garchfit2, "GJR")
+NI3 <- NICurveMaker(garchfit3, "EGARCH")
+
+NI <- cbind(NI1, NI2, NI3) %>% 
+  gather(Model, Sigma, starts_with("Sigma")) %>% 
+  rename(Epsilon = Epsilon_GARCH11) %>% 
+  select(-Epsilon_GJR, -Epsilon_EGARCH)
+
+ggplot(NI) + 
+  geom_line(aes(x = Epsilon, y = Sigma, colour = Model)) + 
+  ggtitle("News Impact Curves: ZAR") + 
+  theme_hc()
+
+```
+
+
+---
+
+### 5. GO GARCH and time varying correlation between ZAR and Dollar strength
+
+Now we bring in the multivariate flavour, matching Practical 7 style, but on a simple two series system: ZAR and the Dollar index (bbdxy). This speaks directly to the “benefits when the Dollar is strong” statement.
+
+
+```{r Q4-zar-go-garch-data, echo = TRUE}
+# Dollar index log returns
+g10_rts <- bbdxy %>% 
+  arrange(date) %>% 
+  mutate(G10 = log(Price) - log(lag(Price))) %>% 
+  filter(date > dplyr::first(date)) %>% 
+  select(date, G10)
+
+# ZAR log returns (from earlier cncy_rts object)
+zar_log_rts <- cncy_rts %>% 
+  filter(Name == "SouthAfrica") %>% 
+  rename(ZAR = dlogret) %>% 
+  select(date, ZAR)
+
+# Merge and convert to xts
+xts_rtn <- left_join(g10_rts, zar_log_rts, by = "date") %>% 
+  drop_na() %>% 
+  tbl_xts()
+
+```
+
+
+
+Helper for renaming pairwise correlations (same as Practical 7):
+
+
+```{r Q4-renamingdcc, echo = TRUE}
+renamingdcc <- function(ReturnSeries, DCC.TV.Cor) {
+  dates <- zoo::index(ReturnSeries)
+  N     <- ncol(ReturnSeries)
+  names <- colnames(ReturnSeries)
+  
+  pairs      <- expand.grid(names, names)
+  pair_names <- paste0(pairs$Var1, "_", pairs$Var2)
+  
+  df <- as.data.frame(DCC.TV.Cor)
+  colnames(df) <- pair_names
+  df$date      <- dates
+  
+  df %>% 
+    tidyr::pivot_longer(
+      cols      = -date,
+      names_to  = "Pairs",
+      values_to = "Rho"
+    ) %>% 
+    dplyr::arrange(date)
+}
+
+```
+
+
+
+GO GARCH specification and fit, directly from Nico’s multivariate notes:
+
+```{r Q4-zar-go-garch-fit, echo = TRUE}
+# Univariate GJR GARCH spec for each series
+uspec <- ugarchspec(
+  variance.model = list(
+    model      = "gjrGARCH",
+    garchOrder = c(1, 1)
+  ),
+  mean.model = list(
+    armaOrder    = c(1, 0),
+    include.mean = TRUE
+  ),
+  distribution.model = "sstd"
+)
+
+multi_univ_garch_spec <- multispec(replicate(ncol(xts_rtn), uspec))
+
+spec.go <- gogarchspec(
+  multi_univ_garch_spec,
+  distribution.model = "mvnorm",
+  ica                = "fastica"
+)
+
+cl <- makePSOCKcluster(10)
+
+multf <- multifit(multi_univ_garch_spec, xts_rtn, cluster = cl)
+
+fit.gogarch <- gogarchfit(
+  spec    = spec.go,
+  data    = xts_rtn,
+  solver  = "hybrid",
+  cluster = cl,
+  gfun    = "tanh",
+  maxiter1 = 40000,
+  epsilon  = 1e-08,
+  rseed    = 100
+)
+
+stopCluster(cl)
+
+print(fit.gogarch)
+
+```
+
+
+Time varying correlations, same gymnastics as in the notes:
+
+
+```{r Q4-zar-go-garch-tv-cor, echo = TRUE}
+gog.time.var.cor <- rcor(fit.gogarch)
+gog.time.var.cor <- aperm(gog.time.var.cor, c(3, 2, 1))
+dim(gog.time.var.cor) <- c(
+  nrow(gog.time.var.cor),
+  ncol(gog.time.var.cor)^2
+)
+
+gog.time.var.cor <- renamingdcc(
+  ReturnSeries = xts_rtn,
+  DCC.TV.Cor   = gog.time.var.cor
+)
+
+g2 <- ggplot(
+  gog.time.var.cor %>% 
+    filter(grepl("ZAR_", Pairs), !grepl("_ZAR", Pairs))
+) +
+  geom_line(aes(x = date, y = Rho, colour = Pairs)) +
+  theme_hc() +
+  ggtitle("Go GARCH: time varying correlation between ZAR and Dollar index")
+
+print(g2)
+
+```
+
+
+---
+
+### 6. Linking to G10 carry and PPP value (for narrative)
+
+For the second statement in the question, you can add very short extra chunks to relate ZAR returns to:
+
+- G10 carry index `cncy_Carry`  
+- PPP value index `cncy_value`  
+- FX implied vol `cncyIV`  
+
+For example, simple correlations over the sample:
+
+
+```{r Q4-zar-carry-value-links, echo = TRUE}
+# Simple daily log returns for ZAR, carry, value, and Dollar index
+zar_daily <- cncy_rts %>% filter(Name == "SouthAfrica") %>% select(date, ZAR = dlogret)
+
+carry_rts <- cncy_Carry %>% 
+  arrange(date) %>% 
+  mutate(Carry = log(Price) - log(lag(Price))) %>% 
+  filter(!is.na(Carry)) %>% 
+  select(date, Carry)
+
+value_rts <- cncy_value %>% 
+  arrange(date) %>% 
+  mutate(Value = log(Price) - log(lag(Price))) %>% 
+  filter(!is.na(Value)) %>% 
+  select(date, Value)
+
+dxy_rts <- bbdxy %>% 
+  arrange(date) %>% 
+  mutate(DXY = log(Price) - log(lag(Price))) %>% 
+  filter(!is.na(DXY)) %>% 
+  select(date, DXY)
+
+link_df <- zar_daily %>% 
+  inner_join(carry_rts, by = "date") %>% 
+  inner_join(value_rts, by = "date") %>% 
+  inner_join(dxy_rts,   by = "date")
+
+round(cor(link_df %>% select(-date), use = "complete.obs"), 3)
+
+```
+

@@ -14,6 +14,351 @@ editor_options:
 
 ---
 
+
+
+
+### Question 1 
+
+I struggled with this question....
+
+We can compute the rolling 3-year beta for each active manager and the ABC Fund against the benchmark.Then, we can create a scatterplot of returns vs. risk (beta) and overlay boxplots to show the distribution of betas for peers and highlight ABC Fund.
+
+
+To see how much the fund differs from the rest of the industry in terms of what drives the return .We can perform a factor analysis or compare the R-squared from a market model to see how much of the returns are explained by the market.
+
+
+Assess relative performance over time We can plot the cumulative returns of ABC Fund, peers, and the benchmark.
+
+We can compute a measure of dispersion (cross-sectional standard deviation of returns) and then plot the fund's performance against this dispersion.
+
+
+
+
+### Question 2
+
+---
+```{r load-data-Q2, echo = TRUE}
+# Load readr using pacman
+pacman::p_load(
+  readr,
+  tidyverse,
+  lubridate,
+  tbl2xts,
+  PerformanceAnalytics,
+  rmsfuns,
+  fmxdat,
+  DescTools
+)
+
+# Load the data
+Hold_Rets <- read_rds("data/Hold_Rets_Sectors.rds") 
+
+head(Hold_Rets)
+```
+
+To answer the first part of small stocks being highly volatile compared to larger stocks I will annualise the returns for the decade as requested by the question - I will also categorise the returns with their groups as either being small_cap or large_cap
+
+
+In the lecturer’s notes, volatility (risk) is explicitly defined and measured using the standard deviation of returns, and we are told that:
+
+Standard deviation should be annualised when we compare different time periods.
+
+The usual shortcut SD * sqrt(12) is only theoretically correct when we work with logarithmic returns, because annual log return is the sum of monthly log returns, which justifies the square root of time rule.
+
+So, to be consistent with the notes and to get a clean, comparable volatility measure, I:
+
+Construct value weighted indices for small caps and large caps.
+
+Convert their monthly simple returns to log returns using log(1 + ret).
+
+Compute a 36 month rolling standard deviation of these log monthly returns.
+
+Annualise that rolling SD by multiplying by sqrt(12).
+
+This gives me a rolling annualised standard deviation of returns for small caps and large caps over the past decade. Comparing these two series over time is a direct, textbook implementation of the lecturer’s definition of volatility, so it is an appropriate way to answer 2(i): if the small cap series has a consistently higher annualised SD, we can conclude that smaller stocks have been more volatile than larger stocks locally.
+
+```{r}
+options(dplyr.summarise.inform = FALSE)
+
+library(tidyverse)
+library(lubridate)
+library(tbl2xts)
+library(PerformanceAnalytics)
+library(RcppRoll)
+library(fmxdat)   # for safe_month_min, theme_fmx, fmx_cols, fmx_fills etc
+
+# Start from your data
+# Hold_Rets has: date, Tickers, Return, Weight, Group, Sector
+
+Hold_Rets_decade <- 
+  Hold_Rets %>% 
+  filter(Group %in% c("Small_Caps", "Large_Caps")) %>% 
+  mutate(year = year(date)) %>% 
+  filter(year >= max(year) - 9) %>%   # last 10 calendar years
+  select(-year)
+
+
+```
+
+
+```{r}
+# 1a. Daily value-weighted size index returns (Small vs Large)
+idx_daily <- 
+  Hold_Rets_decade %>% 
+  group_by(date, Group) %>% 
+  summarise(
+    ret = sum(Weight * Return, na.rm = TRUE) / sum(Weight, na.rm = TRUE),
+    .groups = "drop"
+  ) %>% 
+  rename(Tickers = Group) %>%      # so Tickers is "Small_Caps" / "Large_Caps"
+  arrange(Tickers, date)
+
+# 1b. Make returns monthly for illustration (Nico style)
+idx <- 
+  idx_daily %>% 
+  mutate(YM = format(date, "%Y%B")) %>% 
+  arrange(date) %>% 
+  group_by(Tickers, YM) %>% 
+  # pick last date of the month and compute monthly return
+  summarise(
+    date = last(date),
+    ret  = prod(1 + ret, na.rm = TRUE) - 1,
+    .groups = "drop"
+  ) %>% 
+  arrange(Tickers, date)
+
+head(idx)
+
+```
+
+
+```{r}
+#======================
+# Manual Calculation:
+#======================
+
+dfplot <- 
+  bind_rows(
+    # 6 months – do NOT annualise (same as Nico)
+    idx %>% 
+      filter(date >= fmxdat::safe_month_min(last(date), N = 6)) %>% 
+      group_by(Tickers) %>% 
+      summarise(mu = prod(1 + ret, na.rm = TRUE) - 1) %>% 
+      mutate(Freq = "A"),
+    
+    # 1 year
+    idx %>% 
+      filter(date >= fmxdat::safe_month_min(last(date), N = 12)) %>% 
+      group_by(Tickers) %>% 
+      summarise(mu = prod(1 + ret, na.rm = TRUE) ^ (12 / 12) - 1) %>% 
+      mutate(Freq = "B"),
+    
+    # 3 years
+    idx %>% 
+      filter(date >= fmxdat::safe_month_min(last(date), N = 36)) %>% 
+      group_by(Tickers) %>% 
+      summarise(mu = prod(1 + ret, na.rm = TRUE) ^ (12 / 36) - 1) %>% 
+      mutate(Freq = "C"),
+    
+    # 5 years
+    idx %>% 
+      filter(date >= fmxdat::safe_month_min(last(date), N = 60)) %>% 
+      group_by(Tickers) %>% 
+      summarise(mu = prod(1 + ret, na.rm = TRUE) ^ (12 / 60) - 1) %>% 
+      mutate(Freq = "D")
+  )
+
+#======================
+# PerformanceAnalytics check
+#======================
+
+idxxts <- 
+  tbl_xts(idx, cols_to_xts = ret, spread_by = Tickers)
+
+dfplotxts <- 
+  bind_rows(
+    idxxts %>% tail(6)  %>% Return.annualized(scale = 12) %>% data.frame() %>% mutate(Freq = "A"),
+    idxxts %>% tail(12) %>% Return.annualized(scale = 12) %>% data.frame() %>% mutate(Freq = "B"),
+    idxxts %>% tail(36) %>% Return.annualized(scale = 12) %>% data.frame() %>% mutate(Freq = "C"),
+    idxxts %>% tail(60) %>% Return.annualized(scale = 12) %>% data.frame() %>% mutate(Freq = "D")
+  ) %>% 
+  data.frame() %>% 
+  tidyr::gather(Tickers, mu, -Freq) %>% 
+  mutate(Tickers = gsub("\\.", " ", Tickers))
+
+# Facet labels
+to_string <- as_labeller(c(
+  `A` = "6 Months", 
+  `B` = "1 Year", 
+  `C` = "3 Years", 
+  `D` = "5 Years"
+))
+
+# Barplot_foo (same style)
+g_ann <- 
+  dfplot %>% 
+  ggplot() + 
+  geom_bar(aes(Tickers, mu, fill = Tickers), stat = "identity") + 
+  facet_wrap(~Freq, labeller = to_string, nrow = 1) + 
+  labs(
+    x = "",
+    y = "Returns (Ann.)",
+    caption = "Note:\nReturns in excess of a year are in annualized terms."
+  ) + 
+  fmx_fills() + 
+  geom_label(
+    aes(Tickers, mu, label = paste0(round(mu, 4) * 100, "%")),
+    size = ggpts(8),
+    alpha = 0.35,
+    fontface = "bold",
+    nudge_y = 0.002
+  ) + 
+  theme_fmx(
+    CustomCaption = TRUE,
+    title.size = ggpts(43),
+    subtitle.size = ggpts(38),
+    caption.size = ggpts(30),
+    axis.size = ggpts(37),
+    legend.size = ggpts(35),
+    legend.pos = "top"
+  ) +
+  theme(
+    axis.text.x  = element_blank(),
+    axis.title.y = element_text(vjust = 2),
+    strip.text.x = element_text(
+      face   = "bold",
+      size   = ggpts(35),
+      margin = margin(.1, 0, .1, 0, "cm")
+    )
+  )
+
+g_ann
+
+```
+
+```{r}
+gg_cum <- 
+  idx %>% 
+  arrange(date) %>% 
+  group_by(Tickers) %>% 
+  mutate(
+    Rets = coalesce(ret, 0),
+    CP   = cumprod(1 + Rets)
+  ) %>% 
+  ungroup() %>% 
+  ggplot() +
+  geom_line(aes(date, CP, colour = Tickers)) +
+  labs(
+    title   = "Illustration of Cumulative Returns of Large vs Small Caps",
+    subtitle = "",
+    caption = "Note:\nDistortions emerge as starting dates differ."
+  ) +
+  theme_fmx(
+    title.size    = ggpts(30),
+    subtitle.size = ggpts(5),
+    caption.size  = ggpts(25),
+    CustomCaption = TRUE
+  )
+
+# Level plot
+gg_cum
+
+# Log cumulative plot
+gg_cum_log <- 
+  gg_cum +
+  coord_trans(y = "log10") +
+  labs(
+    title = paste0(gg_cum$labels$title, "\nLog Scaled"),
+    y     = "Log Scaled Cumulative Returns"
+  )
+
+gg_cum_log
+
+```
+
+```{r}
+plotdf <- 
+  idx %>% 
+  group_by(Tickers) %>% 
+  mutate(
+    RollRets = RcppRoll::roll_prod(1 + ret, 36, fill = NA, align = "right") ^ (12 / 36) - 1
+  ) %>% 
+  group_by(date) %>% 
+  filter(any(!is.na(RollRets))) %>% 
+  ungroup()
+
+g_roll <- 
+  plotdf %>% 
+  ggplot() +
+  geom_line(aes(date, RollRets, colour = Tickers), alpha = 0.7, size = 1.25) +
+  labs(
+    title   = "Rolling 3 Year Annualized Returns: Large vs Small Caps",
+    subtitle = "",
+    x       = "",
+    y       = "Rolling 3 year Returns (Ann.)",
+    caption = "Note:\nDistortions are not evident now."
+  ) +
+  theme_fmx(
+    title.size    = ggpts(30),
+    subtitle.size = ggpts(5),
+    caption.size  = ggpts(25),
+    CustomCaption = TRUE
+  ) +
+  fmx_cols()
+
+finplot(g_roll, x.date.dist = "1 year", x.date.type = "%Y", x.vert = TRUE,
+        y.pct = TRUE, y.pct_acc = 1)
+
+```
+
+
+# This is the answer to the volatility question 
+```{r}
+plot_dlog <- 
+  idx %>% 
+  group_by(Tickers) %>% 
+  # log monthly returns:
+  mutate(ret = log(1 + ret)) %>% 
+  # Rolling SD annualized calc now:
+  mutate(
+    RollSD = RcppRoll::roll_sd(ret, 36, fill = NA, align = "right") * sqrt(12)
+  ) %>% 
+  filter(!is.na(RollSD))
+
+g_sd <- 
+  plot_dlog %>% 
+  ggplot() +
+  geom_line(aes(date, RollSD, colour = Tickers), alpha = 0.7, size = 1.25) +
+  labs(
+    title   = "Rolling 3 Year Annualized SD: Large vs Small Caps",
+    subtitle = "",
+    x       = "",
+    y       = "Rolling 3 year SD (Ann.)",
+    caption = "Note:\nAnnualized SD computed on log monthly returns."
+  ) +
+  theme_fmx(
+    title.size    = ggpts(30),
+    subtitle.size = ggpts(5),
+    caption.size  = ggpts(25),
+    CustomCaption = TRUE
+  ) +
+  fmx_cols()
+
+finplot(g_sd, x.date.dist = "1 year", x.date.type = "%Y", x.vert = TRUE,
+        y.pct = FALSE)
+```
+
+
+Second part (peak and troughs )
+
+We need three graphs that have returns ( of whatever format on the y axis) and year on the x axis since we have already annualised it's easy graph one needs to have a legend by size group ( small caps , large , medium and other ) , the second by sector and the last by size and sector . Group has NA which aren't necessarily missing values but rather unclassified so we shall call them that to remove confusion 
+
+start with the one for return against size groups 
+
+
+
+### Question 3 
+
 ### Question 4: Volatility and GARCH estimates
 
 #### 5.4.1 Aim of the question
@@ -27,271 +372,385 @@ editor_options:
  statistics to argue your points.
 
 
+- Use your discretion on what you use to measure volatility, which currencies you compare
+ and how you arrive at your conclusions. Be creative in using tables, graphs, stratification and
+ statistics to argue your points.
 
-```{r load-data-Q4, echo = TRUE}
 
-# Load required packages using pacman (installs if missing)
+
+### Q4: Volatility and GARCH estimates for ZAR
+
+#### 0. Libraries and data
+
+
+```{r Q4-libs-data, echo = TRUE}
 pacman::p_load(
-  readr,     # for reading .rds files 
-  tidyverse, # for data manipulation and visualization
-  rugarch,   # for GARCH modeling (volatility analysis)
-  lubridate, # for working with dates and times
-  tbl2xts,   # for converting tibbles to xts time series
-  zoo        # for time series infrastructure and manipulation
+  tidyverse,
+  devtools,
+  rugarch,
+  rmgarch,
+  forecast,
+  tbl2xts,
+  lubridate,
+  PerformanceAnalytics,
+  ggthemes,
+  robustbase,
+  kableExtra,
+  RcppRoll
 )
 
-# Source any helper functions for Q5
-list.files("Q5/code/", full.names = TRUE, recursive = TRUE) %>% 
-  .[grepl("\\.R$", .)] %>%     # Filter only .R script files
-  as.list() %>%                # Convert to list for walk()
-  walk(~ source(.x))           # Source each script (e.g., custom functions)
-
-# Load pre-processed data files (all relative to USD)
-cncy       <- read_rds("data/currencies.rds")     # Daily spot rates for G10 currencies
-cncy_Carry <- read_rds("data/cncy_Carry.rds")     # Deutsche Bank G10 Carry Index (DBHVG10U Index)
-cncy_value <- read_rds("data/cncy_value.rds")     # Deutsche Bank FX PPP Value Index (DBPPPUSF Index)
-cncyIV     <- read_rds("data/cncyIV.rds")         # Implied volatility (similar to VIX for currencies)
-bbdxy      <- read_rds("data/bbdxy.rds")          # Bloomberg Dollar Spot Index (BBDXY)
-
-
+# Currency data (all quoted vs USD)
+cncy       <- read_rds("data/currencies.rds")
+cncy_Carry <- read_rds("data/cncy_Carry.rds")   # G10 carry index
+cncy_value <- read_rds("data/cncy_value.rds")   # FX PPP value index
+cncyIV     <- read_rds("data/cncyIV.rds")       # FX implied vol index
+bbdxy      <- read_rds("data/bbdxy.rds")        # Bloomberg Dollar spot index
 
 ```
 
-Volatility of ZAR 
 
-```{r}
-# This step calculates various volatility measures for currency returns
-# We use multiple measures because each captures different aspects of risk:
-# - Standard deviation (sd) is the most common symmetric volatility measure
-# - MAD is more robust to outliers than standard deviation
-# - Downside deviation focuses only on negative returns, which aligns with investor concerns about losses
-# - d-ratio provides a measure of return asymmetry
 
-# Lets start with the currency returns
-# Volatility of ZAR
-# Currency returns following lecturer's pattern
+### 1. Cross sectional volatility: ZAR vs G10 vs others
+
+```{r Q4-vol-panel, echo = TRUE}
+# Construct daily log returns and scaled returns for all currencies
 cncy_rts <- cncy %>%  
   group_by(Name) %>%  
-  arrange(date, .by_group = TRUE) %>%                 # ensure sorted
+  arrange(date, .by_group = TRUE) %>% 
   mutate(
     dlogret   = log(Price) - log(lag(Price)),
     scaledret = dlogret - mean(dlogret, na.rm = TRUE)
   ) %>% 
-  filter(date > dplyr::first(date)) %>%               # drop first date per currency
+  filter(date > dplyr::first(date)) %>% 
   ungroup() %>% 
   mutate(Name = gsub("_Cncy", "", Name))
 
+# Define G10 set in the cleaned Name space
+g10_vec <- c(
+  "Australia_Inv",  # AUD
+  "Canada",         # CAD
+  "EU_Inv",         # EUR
+  "Japan",          # JPY
+  "NZ_Inv",         # NZD
+  "Norway",         # NOK
+  "Sweden",         # SEK
+  "UK_Inv"          # GBP
+  # USD is the base here
+)
 
-# Calculate multiple volatility measures over the past few years
+# Volatility measures since 2015
 vol_cncy <- cncy_rts %>% 
-    filter(date > as.Date("2015-01-01")) %>%  # Filter for recent period
-    group_by(Name) %>%
-    summarize(
-        # Standard deviation - most commonly used measure due to mathematical properties
-        # and compatibility with normal distribution assumptions
-        std_dev = sd(dlogret, na.rm = TRUE),
-        
-        # Mean Absolute Deviation (MAD) - more robust to outliers than standard deviation
-        mad = mean(abs(dlogret - mean(dlogret, na.rm = TRUE)), na.rm = TRUE),
-        
-        # Downside deviation (semi-deviation) - only considers returns below zero
-        # More relevant for risk-averse investors who primarily care about losses
-        downside_dev = sqrt(mean(ifelse(dlogret < 0, dlogret^2, 0), na.rm = TRUE)),
-        
-        # d-ratio - measures asymmetry between upside and downside
-        # Values < 1 indicate more downside risk, values > 1 indicate more upside potential
-        d_ratio = (n() - sum(ifelse(dlogret < 0, dlogret, 0))) / 
-                  (n() + sum(ifelse(dlogret > 0, dlogret, 0)))
+  filter(date > ymd(20150101)) %>% 
+  group_by(Name) %>%
+  summarise(
+    std_dev      = sd(dlogret, na.rm = TRUE),
+    mad          = mean(abs(dlogret - mean(dlogret, na.rm = TRUE)), na.rm = TRUE),
+    downside_dev = sqrt(mean(ifelse(dlogret < 0, dlogret^2, 0), na.rm = TRUE)),
+    d_ratio      = (n() - sum(ifelse(dlogret < 0, dlogret, 0))) / 
+                   (n() + sum(ifelse(dlogret > 0, dlogret, 0))),
+    .groups = "drop"
+  ) %>% 
+  mutate(
+    Group = case_when(
+      Name == "SouthAfrica" ~ "ZAR",
+      Name %in% g10_vec     ~ "G10",
+      TRUE                  ~ "Other"
     )
+  )
 
-# Rank currencies by standard deviation (most common volatility measure)
-ranked_data <- vol_cncy %>%
-  mutate(rank = rank(-std_dev, na.last = "keep")) %>%  # Rank by standard deviation (descending)
-    arrange(rank) %>%  # Sort by rank
-    slice_head(n = 20)  # Keep top 20 most volatile currencies
+# Rank by standard deviation
+ranked_data <- vol_cncy %>% 
+  arrange(desc(std_dev)) %>% 
+  mutate(rank = row_number()) %>% 
+  select(rank, Name, Group, everything())
 
-kableExtra::kable(ranked_data, caption = "Top 20 Most Volatile Currencies (2016-2021)")
-
-# DISCLAIMER: 
-# While we calculate multiple volatility measures, standard deviation (std_dev) remains
-# the most widely used measure in practice due to(S1 lecture notes):
-# 1. Mathematical convenience and well-understood properties
-# 2. Compatibility with normal distribution assumptions in many financial models
-# 3. Use in common risk-adjusted performance measures like Sharpe ratio
-# 4. Historical precedent and industry standardization
-#
-# However, investors should consider that standard deviation treats positive and 
-# negative returns equally, while most investors are primarily concerned with 
-# downside risk. The additional measures provided (MAD, downside_dev, d-ratio)
-# offer complementary perspectives on risk characteristics.
+kableExtra::kable(
+  ranked_data,
+  caption = "Volatility ranking of currencies (log returns, since 2015)",
+  digits = 6
+)
 ```
 
 
 
+```{r Q4-vol-plot, echo = TRUE}
+# Identify top 10 by volatility
+vol_with_rank <- vol_cncy %>% 
+  arrange(desc(std_dev)) %>% 
+  mutate(rank = row_number())
 
+# Keep: top 10 *or* any G10 currency
+plot_set <- vol_with_rank %>% 
+  filter(rank <= 10 | Group == "G10")
 
-
-```{r}
-# I now want to run a for loop to get the average garch sigma over the same period for all the countries and then rank them again and see if noise is influencing the ranking
-
-#I really tried to get it to work but i couldnt manage
+plot_set %>% 
+  mutate(Name = fct_reorder(Name, std_dev)) %>% 
+  ggplot() +
+  geom_col(aes(x = Name, y = std_dev, fill = Group), alpha = 0.9) +
+  scale_fill_manual(
+    values = c(
+      "ZAR"   = "red",
+      "G10"   = "grey40",
+      "Other" = "grey80"
+    )
+  ) +
+  coord_flip() +
+  labs(
+    title    = "Cross sectional volatility of currencies",
+    subtitle = "Top 10 currencies by volatility plus G10 majors (since 2015)",
+    x = "",
+    y = "Standard deviation",
+    fill = ""
+  ) +
+  fmxdat::theme_fmx()
 
 ```
 
+---
 
-```{r}
-#Lets plot the return type persistence
 
-#Get the returns and ensure they are in xts
+```{r Q4-zar-persistence, echo = TRUE}
+# Simple returns for ZAR only
 zar_rts <- cncy %>%  
-    filter(date > ymd(20150101)) %>% 
-    group_by(Name) %>%  
-    mutate(ret = Price/lag(Price)-1) %>% 
-     filter(date > dplyr::first(date)) %>%               # drop first date per currency
+  filter(date > ymd(20150101)) %>% 
+  group_by(Name) %>%  
+  mutate(ret = Price / lag(Price) - 1) %>% 
+  filter(date > dplyr::first(date)) %>% 
   ungroup() %>%  
-    mutate(Name= gsub("_Cncy", "", Name)) %>% 
-   filter(Name == "SouthAfrica") %>% 
-     filter(!is.na(ret)) %>% 
-    select(-Name, -Price) %>% 
-    tbl_xts()
+  mutate(Name = gsub("_Cncy", "", Name)) %>% 
+  filter(Name == "SouthAfrica") %>% 
+  filter(!is.na(ret)) %>% 
+  select(-Name, -Price) %>% 
+  tbl_xts()
 
-#Following the practical for ease of syntax
-Plotdata = cbind(zar_rts, zar_rts^2, abs(zar_rts))
-colnames(Plotdata) = c("Returns", "Returns_Sqd", "Returns_Abs")
+# Construct the three series: returns, squared returns, absolute returns
+Plotdata <- cbind(zar_rts, zar_rts^2, abs(zar_rts))
+colnames(Plotdata) <- c("Returns", "Returns_Sqd", "Returns_Abs")
 
-Plotdata <- 
-Plotdata %>% xts_tbl() %>% 
-gather(ReturnType, Returns, -date)
+Plotdata <- Plotdata %>% 
+  xts_tbl() %>% 
+  gather(ReturnType, Returns, -date)
 
 ggplot(Plotdata) + 
-geom_line(aes(x = date, y = Returns, colour = ReturnType, alpha = 0.5)) + 
-    
-ggtitle("Return Type Persistence: ZAR") + 
-facet_wrap(~ReturnType, nrow = 3, ncol = 1, scales = "free") + 
-    
-guides(alpha = "none", colour = "none") + 
-fmxdat::theme_fmx()
-
+  geom_line(aes(x = date, y = Returns, colour = ReturnType, alpha = 0.5)) + 
+  ggtitle("Return Type Persistence: ZAR") + 
+  facet_wrap(~ReturnType, nrow = 3, ncol = 1, scales = "free") + 
+  guides(alpha = "none", colour = "none") + 
+  fmxdat::theme_fmx()
 ```
 
-```{r}
-forecast::Acf(zar_rts, main = "ACF: ZAR")
-```
 
-```{r}
-forecast::Acf(zar_rts^2, main = "ACF: Squared ZAR")
-```
-```{r}
-forecast::Acf(abs(zar_rts), main = "ACF: Absolute ZAR")
-```
+```{r Q4-zar-acf, echo = TRUE}
+forecast::Acf(zar_rts,   main = "ACF: ZAR return")
+forecast::Acf(zar_rts^2, main = "ACF: Squared ZAR return")
+forecast::Acf(abs(zar_rts), main = "ACF: Absolute ZAR return")
 
-```{r}
 Box.test(coredata(zar_rts^2), type = "Ljung-Box", lag = 12)
 ```
 
-```{r}
-# Now we can actually fit the univariate garch model
-cncy_rts_xts <- cncy %>%  
-    filter(date > ymd(20150101)) %>% 
-    group_by(Name) %>%  
-    mutate(ret = Price/lag(Price)-1) %>% 
-     filter(date > dplyr::first(date)) %>%               # drop first date per currency
-  ungroup() %>% 
-    mutate(Name= gsub("_Cncy", "", Name)) %>% 
-   filter(Name == "SouthAfrica") %>% 
-      filter(!is.na(ret)) %>% 
-    select(-Name, -Price) %>% 
-    tbl_xts()
 
+---
 
-#now i follow the practical as to fit the model
+### 3. Fitting GARCH(1,1) to ZAR (rugarch, copy of Practical 6)
 
-garch11 <- 
-  
-  ugarchspec(
-    
-    variance.model = list(model = c("sGARCH","gjrGARCH","eGARCH","fGARCH","apARCH")[1], 
-                          
-    garchOrder = c(1, 1)), 
-    
-    mean.model = list(armaOrder = c(1, 0), include.mean = TRUE), 
-    
-    distribution.model = c("norm", "snorm", "std", "sstd", "ged", "sged", "nig", "ghyp", "jsu")[1])
+```{r Q4-zar-garch-fit, echo = TRUE}
+# Use the same object name as Nico: porteqw now holds ZAR returns
+porteqw <- zar_rts
 
-# Now to fit, I use as.matrix and the data - this way the plot functions we will use later will work.
+# GARCH(1,1) specification as in the notes
+garch11 <- ugarchspec(
+  variance.model = list(
+    model      = c("sGARCH","gjrGARCH","eGARCH","fGARCH","apARCH")[1],
+    garchOrder = c(1, 1)
+  ),
+  mean.model = list(
+    armaOrder    = c(1, 0),
+    include.mean = TRUE
+  ),
+  distribution.model = c("norm", "snorm", "std", "sstd", "ged", "sged", "nig", "ghyp", "jsu")[1]
+)
 
-garchfit1 = ugarchfit(spec = garch11,data = cncy_rts_xts) 
-sigma <- sigma(garchfit1) %>% xts_tbl() 
+garchfit1 <- ugarchfit(spec = garch11, data = porteqw)
+
+garchfit1
 ```
 
-```{r}
+
+```{r Q4-zar-garch-table, echo = TRUE}
 garch_tab <- garchfit1@fit$matcoef
-kableExtra::kable(garch_tab)
+kableExtra::kable(garch_tab, caption = "GARCH(1,1) estimates for ZAR")
 ```
 
-```{r}
+
+
+Conditional variance plot, identical structure:
+
+
+```{r Q4-zar-sigma-plot, echo = TRUE}
 sigma <- sigma(garchfit1) %>% xts_tbl() 
 colnames(sigma) <- c("date", "sigma") 
 sigma <- sigma %>% mutate(date = as.Date(date))
 
-gg <- 
-  
-ggplot() + 
-  geom_line(data = Plotdata %>% filter(ReturnType == "Returns_Sqd") %>% select(date, Returns) %>% 
-              
-              unique %>% mutate(Returns = sqrt(Returns)), aes(x = date, y = Returns)) + 
-  
-  geom_line(data = sigma, aes(x = date, y = sigma), color = "red", size = 2, alpha = 0.8) + 
-  
-  # scale_y_continuous(limits = c(0, 0.35)) + 
-  labs(title = "Comparison: Returns Sigma vs Sigma from Garch") + 
-  
-    fmxdat::theme_fmx()
+gg <- ggplot() + 
+  geom_line(
+    data = Plotdata %>% 
+      filter(ReturnType == "Returns_Sqd") %>% 
+      select(date, Returns) %>% 
+      unique() %>% 
+      mutate(Returns = sqrt(Returns)),
+    aes(x = date, y = Returns)
+  ) + 
+  geom_line(
+    data = sigma,
+    aes(x = date, y = sigma),
+    color = "red", size = 2, alpha = 0.8
+  ) + 
+  labs(
+    title    = "Comparison: Returns sigma vs sigma from GARCH",
+    subtitle = "ZAR: note the smoothing effect of GARCH as noise is controlled for.",
+    x = "", y = "Estimated volatility",
+    caption = "Source: Financial econometrics practical | Calculations: Own"
+  ) + 
+  fmxdat::theme_fmx(CustomCaption = TRUE)
+
+fmxdat::finplot(gg, y.pct = TRUE, y.pct_acc = 1)
+
 ```
 
-```{r}
-fmxdat::finplot(gg, y.pct = T, y.pct_acc = 1)
+
+News impact curve for the ZAR GARCH model:
+
+
+```{r Q4-zar-nic, echo = TRUE}
+ni <- newsimpact(z = NULL, garchfit1)
+
+plot(
+  ni$zx, ni$zy,
+  ylab = ni$yexpr,
+  xlab = ni$xexpr,
+  type = "l",
+  main = "News Impact Curve: ZAR sGARCH(1,1)"
+)
+
 ```
 
 
-GO-GARCH
 
-```{r}
-#Now I use the bbdxy to compare the volatility of the rand to global currencies
+### 4. Alternative GARCH forms for ZAR (GJR and EGARCH) and NIC comparison
 
+```{r Q4-zar-gjr-egarch, echo = TRUE}
+# GJR GARCH with student t
+gjrgarch11 <- ugarchspec(
+  variance.model = list(
+    model      = c("sGARCH","gjrGARCH","eGARCH","fGARCH","apARCH")[2],
+    garchOrder = c(1, 1)
+  ),
+  mean.model = list(
+    armaOrder    = c(1, 0),
+    include.mean = TRUE
+  ),
+  distribution.model = c("norm", "snorm", "std", "sstd", "ged", "sged", "nig", "ghyp", "jsu")[3]
+)
+
+garchfit2 <- ugarchfit(spec = gjrgarch11, data = as.matrix(porteqw))
+
+kableExtra::kable(
+  garchfit2@fit$matcoef,
+  caption = "GJR GARCH(1,1) with student t distribution for ZAR"
+)
+
+# EGARCH(1,1) with student t
+egarch11 <- ugarchspec(
+  variance.model = list(
+    model      = c("sGARCH","gjrGARCH","eGARCH","fGARCH","apARCH")[3],
+    garchOrder = c(1, 1)
+  ),
+  mean.model = list(
+    armaOrder    = c(1, 0),
+    include.mean = TRUE
+  ),
+  distribution.model = c("norm", "snorm", "std", "sstd", "ged", "sged", "nig", "ghyp", "jsu")[3]
+)
+
+garchfit3 <- ugarchfit(spec = egarch11, data = as.matrix(porteqw))
+
+# Sign bias and info criteria, as in Nico’s notes
+signbias(garchfit1)
+infocriteria(garchfit1)
+infocriteria(garchfit2)
+infocriteria(garchfit3)
+
+```
+
+
+
+News impact curves for all three, identical helper function:
+
+
+```{r Q4-zar-nic-compare, echo = TRUE}
+NICurveMaker <- function(Fit, Name) {
+  NI <- newsimpact(z = NULL, Fit)
+  NI <- cbind(NI$zx, NI$zy)
+  colnames(NI) <- c(paste0("Epsilon_", Name), paste0("Sigma_", Name))
+  NI %>% data.frame() %>% tibble::as_tibble()
+}
+
+NI1 <- NICurveMaker(garchfit1, "GARCH11")
+NI2 <- NICurveMaker(garchfit2, "GJR")
+NI3 <- NICurveMaker(garchfit3, "EGARCH")
+
+NI <- cbind(NI1, NI2, NI3) %>% 
+  gather(Model, Sigma, starts_with("Sigma")) %>% 
+  rename(Epsilon = Epsilon_GARCH11) %>% 
+  select(-Epsilon_GJR, -Epsilon_EGARCH)
+
+ggplot(NI) + 
+  geom_line(aes(x = Epsilon, y = Sigma, colour = Model)) + 
+  ggtitle("News Impact Curves: ZAR") + 
+  theme_hc()
+
+```
+
+
+---
+
+### 5. GO GARCH and time varying correlation between ZAR and Dollar strength
+
+Now we bring in the multivariate flavour, matching Practical 7 style, but on a simple two series system: ZAR and the Dollar index (bbdxy). This speaks directly to the “benefits when the Dollar is strong” statement.
+
+
+```{r Q4-zar-go-garch-data, echo = TRUE}
+# Dollar index log returns
 g10_rts <- bbdxy %>% 
-    mutate(G10 = log(Price)-log(lag(Price))) %>% 
-   filter(date > dplyr::first(date)) %>%               # drop first date per currency
-    select(date, G10)
+  arrange(date) %>% 
+  mutate(G10 = log(Price) - log(lag(Price))) %>% 
+  filter(date > dplyr::first(date)) %>% 
+  select(date, G10)
 
+# ZAR log returns (from earlier cncy_rts object)
 zar_log_rts <- cncy_rts %>% 
-    filter(Name == "SouthAfrica") %>% 
-    rename("ZAR" = "dlogret") %>% 
-    select(date, ZAR) 
+  filter(Name == "SouthAfrica") %>% 
+  rename(ZAR = dlogret) %>% 
+  select(date, ZAR)
 
-
-
-xts_rtn<- left_join(g10_rts,zar_log_rts, by=  "date") %>% tbl_xts()
-library(rmgarch)
-
-```
-
-```{r}
-#Now set the specifications for the go garch
-```{r}
+# Merge and convert to xts
+xts_rtn <- left_join(g10_rts, zar_log_rts, by = "date") %>% 
+  drop_na() %>% 
+  tbl_xts()
 
 ```
 
-```{r}
+
+
+Helper for renaming pairwise correlations (same as Practical 7):
+
+
+```{r Q4-renamingdcc, echo = TRUE}
 renamingdcc <- function(ReturnSeries, DCC.TV.Cor) {
-  # ReturnSeries: xts matrix of returns
-  # DCC.TV.Cor:   T x (N^2) matrix after reshaping the rcor output
-  
   dates <- zoo::index(ReturnSeries)
   N     <- ncol(ReturnSeries)
   names <- colnames(ReturnSeries)
   
-  # Build pair names in the same order as vectorised correlations
   pairs      <- expand.grid(names, names)
   pair_names <- paste0(pairs$Var1, "_", pairs$Var2)
   
@@ -308,11 +767,14 @@ renamingdcc <- function(ReturnSeries, DCC.TV.Cor) {
     dplyr::arrange(date)
 }
 
-# ------------------------------------------------------------------------------
-# GO GARCH specification and estimation
-# ------------------------------------------------------------------------------
+```
 
-# Univariate GARCH spec for each series
+
+
+GO GARCH specification and fit, directly from Nico’s multivariate notes:
+
+```{r Q4-zar-go-garch-fit, echo = TRUE}
+# Univariate GJR GARCH spec for each series
 uspec <- ugarchspec(
   variance.model = list(
     model      = "gjrGARCH",
@@ -325,23 +787,18 @@ uspec <- ugarchspec(
   distribution.model = "sstd"
 )
 
-# Replicate univariate spec across all return series
 multi_univ_garch_spec <- multispec(replicate(ncol(xts_rtn), uspec))
 
-# GO GARCH spec (multivariate)
 spec.go <- gogarchspec(
   multi_univ_garch_spec,
-  distribution.model = "mvnorm",   # or "manig"
-  ica                = "fastica"   # fastICA
+  distribution.model = "mvnorm",
+  ica                = "fastica"
 )
 
-# Parallel cluster for speed
 cl <- makePSOCKcluster(10)
 
-# Fit univariate models jointly
 multf <- multifit(multi_univ_garch_spec, xts_rtn, cluster = cl)
 
-# Fit GO GARCH model
 fit.gogarch <- gogarchfit(
   spec    = spec.go,
   data    = xts_rtn,
@@ -355,11 +812,16 @@ fit.gogarch <- gogarchfit(
 
 stopCluster(cl)
 
-# ------------------------------------------------------------------------------
-# Extract and tidy time varying correlations
-# ------------------------------------------------------------------------------
+print(fit.gogarch)
 
-gog.time.var.cor <- rcor(fit.gogarch)               # array: N x N x T
+```
+
+
+Time varying correlations, same gymnastics as in the notes:
+
+
+```{r Q4-zar-go-garch-tv-cor, echo = TRUE}
+gog.time.var.cor <- rcor(fit.gogarch)
 gog.time.var.cor <- aperm(gog.time.var.cor, c(3, 2, 1))
 dim(gog.time.var.cor) <- c(
   nrow(gog.time.var.cor),
@@ -371,21 +833,61 @@ gog.time.var.cor <- renamingdcc(
   DCC.TV.Cor   = gog.time.var.cor
 )
 
-
-
-```{r}
-g2 <- ggplot(gog.time.var.cor %>% filter(grepl("ZAR_", Pairs), 
-    !grepl("_ZAR", Pairs))) + geom_line(aes(x = date, y = Rho, 
-    colour = Pairs)) + fmxdat::theme_fmx() + ggtitle("Go-GARCH: ZAR")
+g2 <- ggplot(
+  gog.time.var.cor %>% 
+    filter(grepl("ZAR_", Pairs), !grepl("_ZAR", Pairs))
+) +
+  geom_line(aes(x = date, y = Rho, colour = Pairs)) +
+  theme_hc() +
+  ggtitle("Go GARCH: time varying correlation between ZAR and Dollar index")
 
 print(g2)
 
 ```
 
-Lastly I plot the GO-GARCH’s correlation between G10 currencies and the Rand. This graph now provides more evidence for how volatile the Rand is with the correleations over just 3 years ranging between 0.7 and 0.2.
 
-```{r}
-detach("package:rmgarch", unload=TRUE)
+---
+
+### 6. Linking to G10 carry and PPP value (for narrative)
+
+For the second statement in the question, you can add very short extra chunks to relate ZAR returns to:
+
+- G10 carry index `cncy_Carry`  
+- PPP value index `cncy_value`  
+- FX implied vol `cncyIV`  
+
+For example, simple correlations over the sample:
+
+
+```{r Q4-zar-carry-value-links, echo = TRUE}
+# Simple daily log returns for ZAR, carry, value, and Dollar index
+zar_daily <- cncy_rts %>% filter(Name == "SouthAfrica") %>% select(date, ZAR = dlogret)
+
+carry_rts <- cncy_Carry %>% 
+  arrange(date) %>% 
+  mutate(Carry = log(Price) - log(lag(Price))) %>% 
+  filter(!is.na(Carry)) %>% 
+  select(date, Carry)
+
+value_rts <- cncy_value %>% 
+  arrange(date) %>% 
+  mutate(Value = log(Price) - log(lag(Price))) %>% 
+  filter(!is.na(Value)) %>% 
+  select(date, Value)
+
+dxy_rts <- bbdxy %>% 
+  arrange(date) %>% 
+  mutate(DXY = log(Price) - log(lag(Price))) %>% 
+  filter(!is.na(DXY)) %>% 
+  select(date, DXY)
+
+link_df <- zar_daily %>% 
+  inner_join(carry_rts, by = "date") %>% 
+  inner_join(value_rts, by = "date") %>% 
+  inner_join(dxy_rts,   by = "date")
+
+round(cor(link_df %>% select(-date), use = "complete.obs"), 3)
+
 ```
 
 
@@ -419,6 +921,21 @@ devtools::source_gist("https://gist.github.com/Nicktz/bd2614f8f8a551881a1dc3c11a
   This uses monthly data from 2011 onwards and drops assets with less than five calendar years of data.
 
 ```{r}
+pacman::p_load(
+  tidyverse,
+  xts,
+  tbl2xts,
+  RiskPortfolios,
+  PerformanceAnalytics,
+  PortfolioAnalytics,
+  lubridate,
+  kableExtra,
+  quadprog
+)
+
+devtools::source_gist("https://gist.github.com/Nicktz/bd2614f8f8a551881a1dc3c11a1e7268")
+library(readr)
+library(dplyr)
 # Load and filter MAA data
 MAA <- read_rds("data/MAA.rds") %>%
   filter(Ticker %in% c("LUACTRUU Index", "LUAGTRUU Index",
@@ -447,7 +964,7 @@ monthly_df <- df_full %>%
   arrange(date) %>%
   group_by(Tickers, YM) %>%
   # Use last observation in each month
-  filter(date == last(date)) %>%
+  filter(date == dplyr::last(date)) %>%
   group_by(Tickers) %>%
   mutate(ret = Price / lag(Price) - 1) %>%
   ungroup() %>%
@@ -658,6 +1175,9 @@ chart.StackedBar(
   main = "Quarterly Rebalanced Global Balanced Index Fund"
 )
 
+# StackBar of monthly weights (Note the stand-out rebalance weights...):
+#Result_roll %>% bar_xts() %>% .[endpoints(.,'months')] %>% chart.StackedBar()
+
 ```
 
 # Clustering 
@@ -690,4 +1210,6 @@ plot(hc, which.plot = 2, main = "Hierarchical clustering of global indices",
      xlab = "", sub = "")
 
 ```
+
+
 

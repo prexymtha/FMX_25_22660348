@@ -1,0 +1,90 @@
+---
+title: "Q1"
+output: html_document
+---
+
+
+```{r load-data-Q1, echo = TRUE}
+# Load readr using pacman
+pacman::p_load(readr)
+
+# Load the data
+Benchmark <- read_rds("data/Capped_SWIX.rds")
+Active_Managers <- read_rds("data/Active_Managers.rds")
+ABC_Fund <- read_rds("data/ABC_Fund.rds")
+
+```
+
+
+```{r}
+## Load packages
+pacman::p_load(
+  tidyverse,
+  lubridate,
+  PerformanceAnalytics
+)
+
+## 2. Build a matched ABC_Fund + Benchmark panel --------------------------
+
+# Keep a single benchmark series and line it up with ABC_Fund dates
+df_q1 <- 
+  ABC_Fund %>% 
+  arrange(date) %>% 
+  left_join(
+    Benchmark %>% 
+      select(date, BM_Returns = Returns),  # benchmark returns
+    by = "date"
+  )
+
+head(df_q1)
+# A tibble: date, Returns (ABC_Fund), BM_Returns (benchmark)
+
+## 3. Convert to xts objects for PerformanceAnalytics ---------------------
+
+# ABC_Fund excess returns series
+Ra <- xts::xts(df_q1$Returns, order.by = df_q1$date)
+colnames(Ra) <- "ABC_Fund"
+
+# Benchmark series
+Rb <- xts::xts(df_q1$BM_Returns, order.by = df_q1$date)
+colnames(Rb) <- "Capped_SWIX"
+
+# (If you do not have a risk free series in this question, set Rf = 0)
+Rf <- 0
+```
+
+```{r}
+## 4. CAPM beta and alpha for ABC_Fund vs benchmark -----------------------
+
+# CAPM Beta (monthly data)
+CAPM.beta(Ra = Ra, Rb = Rb, Rf = Rf)
+
+# Monthly alpha, annualised the same way as in the example:
+(1 + CAPM.alpha(Ra = Ra, Rb = Rb, Rf = Rf))^12 - 1
+
+
+```
+
+
+```{r}
+## 5. Rolling 3-year (36-month) beta --------------------------------------
+
+chart.RollingRegression(
+  Ra        = Ra,
+  Rb        = Rb,
+  width     = 36,          # 3 years of monthly data
+  attribute = c("Beta"),
+  main      = "Rolling 36-month CAPM Beta: ABC Fund vs Capped SWIX"
+)
+
+```
+
+```{r}
+## 6. Summary single-factor model table -----------------------------------
+
+table.SFM(Ra = Ra, Rb = Rb)
+
+```
+
+
+
