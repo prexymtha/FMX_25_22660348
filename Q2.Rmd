@@ -78,7 +78,7 @@ idx_daily <-
   rename(Tickers = Group) %>%      # so Tickers is "Small_Caps" / "Large_Caps"
   arrange(Tickers, date)
 
-# 1b. Make returns monthly for illustration (Nico style)
+# 1b. Make returns monthly 
 idx <- 
   idx_daily %>% 
   mutate(YM = format(date, "%Y%B")) %>% 
@@ -104,7 +104,7 @@ head(idx)
 
 dfplot <- 
   bind_rows(
-    # 6 months – do NOT annualise (same as Nico)
+    # 6 months – do NOT annualise 
     idx %>% 
       filter(date >= fmxdat::safe_month_min(last(date), N = 6)) %>% 
       group_by(Tickers) %>% 
@@ -216,7 +216,7 @@ gg_cum <-
   labs(
     title   = "Illustration of Cumulative Returns of Large vs Small Caps",
     subtitle = "",
-    caption = "Note:\nDistortions emerge as starting dates differ."
+    caption = ""
   ) +
   theme_fmx(
     title.size    = ggpts(30),
@@ -261,7 +261,7 @@ g_roll <-
     subtitle = "",
     x       = "",
     y       = "Rolling 3 year Returns (Ann.)",
-    caption = "Note:\nDistortions are not evident now."
+    caption = ""
   ) +
   theme_fmx(
     title.size    = ggpts(30),
