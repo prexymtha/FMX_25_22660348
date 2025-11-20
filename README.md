@@ -831,6 +831,8 @@ draw_sector_dd("Property")
 
 ### Statistical Analysis Tables
 
+(Added extra from data-camp maybe unnecessary)
+
 ``` r
 # Time series chart of sector returns using PerformanceAnalytics
 sector_xts <- 
@@ -1020,6 +1022,11 @@ in Financials from 2018 to 2022. These findings highlight the importance
 of size and sector in understanding risk dynamics and suggest that
 portfolio construction should account for both cyclical sensitivity and
 recovery behavior across market segments.
+
+Seeing that we have individual stocks ( maybe we could have assessed the
+most volatility and which sectors they are found by their sizes but I
+was unsure how to do that , plus I felt my solution was way all over the
+place trying to include all code so I excluded it)
 
 Second part (peak and troughs )
 
@@ -1411,7 +1418,7 @@ garchfit1
     ## 4    50     56.46       0.2162
     ## 
     ## 
-    ## Elapsed time : 0.1694539
+    ## Elapsed time : 0.180439
 
 ``` r
 garch_tab <- garchfit1@fit$matcoef

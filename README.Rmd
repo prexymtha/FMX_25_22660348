@@ -809,11 +809,7 @@ Seeing that we have individual stocks ( maybe we could have assessed the most vo
 
 
 
-Second part (peak and troughs )
 
-We need three graphs that have returns ( of whatever format on the y axis) and year on the x axis since we have already annualised it's easy graph one needs to have a legend by size group ( small caps , large , medium and other ) , the second by sector and the last by size and sector . Group has NA which aren't necessarily missing values but rather unclassified so we shall call them that to remove confusion 
-
-start with the one for return against size groups 
 
 
 
