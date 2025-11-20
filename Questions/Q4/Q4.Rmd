@@ -1,279 +1,201 @@
 ---
-# IMPORTANT: Change settings here, but DO NOT change the spacing.
-# Remove comments and add values where applicable.
-# The descriptions below should be self-explanatory
-
-title: "Helping You Write Academic Papers in R using Texevier"
-#subtitle: "This will appear as Right Header"
-
-documentclass: "elsarticle"
-
-# --------- Thesis title (Optional - set to FALSE by default).
-# You can move the details below around as you please.
-Thesis_FP: FALSE
-# Entry1: "An unbelievable study with a title spanning multiple lines."
-# Entry2: "\\textbf{Nico Katzke}" # textbf for bold
-# Entry3: "A thesis submitted toward the degree of Doctor of Philosophy"
-# Uni_Logo: Tex/Logo.png # Place a logo in the indicated location (from your root, e.g. defaults to ~/Tex/Logo.png) and uncomment this line. Leave uncommented for no image
-# Logo_width: 0.3 # If using a logo - use this to set width (size) of image
-# Entry4: "Under the supervision of: \\vfill Prof. Joe Smith and Dr. Frank Smith"
-# Entry5: "Stellenbosch University"
-# Entry6: April 2020
-# Entry7:
-# Entry8:
-
-# --------- Front Page
-# Comment: ----- Follow this pattern for up to 5 authors
-AddTitle: TRUE # Use FALSE when submitting to peer reviewed platform. This will remove author names.
-Author1: "Nico Katzke^[__Contributions:__  \\newline _The authors would like to thank no institution for money donated to this project. Thank you sincerely._]"  # First Author - note the thanks message displayed as an italic footnote of first page.
-Ref1: "Prescient Securities, Cape Town, South Africa" # First Author's Affiliation
-Email1: "nfkatzke\\@gmail.com" # First Author's Email address
-
-Author2: "John Smith"
-Ref2: "Some other Institution, Cape Town, South Africa"
-Email2: "John\\@gmail.com"
-CommonAffiliation_12: TRUE # If Author 1 and 2 have a common affiliation. Works with _13, _23, etc.
-
-Author3: "John Doe"
-Email3: "Joe\\@gmail.com"
-
-CorrespAuthor_1: TRUE  # If corresponding author is author 3, e.g., use CorrespAuthor_3: TRUE
-
-# Comment out below to remove both. JEL Codes only given if keywords also given.
-keywords: "Multivariate GARCH \\sep Kalman Filter \\sep Copula" # Use \\sep to separate
-JELCodes: "L250 \\sep L100"
-
-# ----- Manage headers and footers:
-#BottomLFooter: $Title$
-#BottomCFooter:
-#TopLHeader: \leftmark # Adds section name at topleft. Remove comment to add it.
-BottomRFooter: "\\footnotesize Page \\thepage" # Add a '#' before this line to remove footer.
-addtoprule: TRUE
-addfootrule: TRUE               # Use if footers added. Add '#' to remove line.
-
-# --------- page margins:
-margin: 2.3 # Sides
-bottom: 2 # bottom
-top: 2.5 # Top
-HardSet_layout: TRUE # Hard-set the spacing of words in your document. This will stop LaTeX squashing text to fit on pages, e.g.
-# This is done by hard-setting the spacing dimensions. Set to FALSE if you want LaTeX to optimize this for your paper.
-
-# --------- Line numbers
-linenumbers: FALSE # Used when submitting to journal
-
-# ---------- References settings:
-# You can download cls format here: https://www.zotero.org/ - simply search for your institution. You can also edit and save cls formats here: https://editor.citationstyles.org/about/
-# Hit download, store it in Tex/ folder, and change reference below - easy.
-bibliography: Tex/ref.bib       # Do not edit: Keep this naming convention and location.
-csl: Tex/harvard-stellenbosch-university.csl # referencing format used.
-# By default, the bibliography only displays the cited references. If you want to change this, you can comment out one of the following:
-#nocite: '@*' # Add all items in bibliography, whether cited or not
-# nocite: |  # add specific references that aren't cited
-#  @grinold2000
-#  @Someoneelse2010
-
-# ---------- General:
-RemovePreprintSubmittedTo: TRUE  # Removes the 'preprint submitted to...' at bottom of titlepage
-Journal: "Journal of Finance"   # Journal that the paper will be submitting to, if RemovePreprintSubmittedTo is set to TRUE.
-toc: FALSE                       # Add a table of contents
-numbersections: TRUE             # Should sections (and thus figures and tables) be numbered?
-fontsize: 11pt                  # Set fontsize
-linestretch: 1.2                # Set distance between lines.
-link-citations: TRUE            # This creates dynamic links to the papers in reference list.
-
-### Adding additional latex packages:
-# header-includes:
-#    - \usepackage{colortbl} # Add additional packages here.
-
+title: "Question 4: Volatility and GARCH Behaviour of the ZAR"
+author: "Precious Nhamo"
+date: "`r Sys.Date()`"
+bibliography: Tex/ref.bib
 output:
-  pdf_document:
-    keep_tex: TRUE
-    template: Tex/TexDefault.txt
-    fig_width: 3.5 # Adjust default figure sizes. This can also be done in the chunks of the text.
-    fig_height: 3.5
+  pagedown::html_paged:
+    css: ["Template/default-fonts-Texevier.css",
+          "Template/default-page-Texevier.css",
+          "Template/default-Texevier.css"]
+    csl: Template/harvard-stellenbosch-university.csl
+    template: ["Template/paged-Texevier.html"]
+    toc: true
+    self_contained: true
 abstract: |
-  Abstract to be written here. The abstract should not be too long and should provide the reader with a good understanding what you are writing about. Academic papers are not like novels where you keep the reader in suspense. To be effective in getting others to read your paper, be as open and concise about your findings here as possible. Ideally, upon reading your abstract, the reader should feel he / she must read your paper in entirety.
+    This report examines the volatility behaviour of the South African
+    rand (ZAR) relative to a cross section of currencies and the US
+    Dollar index. Using both realised volatility measures and GARCH type
+    models, I assess whether the ZAR has indeed been one of the most
+    volatile currencies in recent years. I then investigate how ZAR
+    performance relates to G10 carry and value factors and to Dollar
+    strength, using factor-based returns and conditional analysis across
+    different market regimes.
 ---
-
-<!-- First: Set your default preferences for chunk options: -->
-
-<!-- If you want a chunk's code to be printed, set echo = TRUE. message = FALSE stops R printing ugly package loading details in your final paper too. I also suggest setting warning = FALSE and checking for warnings in R, else you might find ugly warnings in your paper. -->
-
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, fig.width = 6, fig.height = 5, fig.pos="H", fig.pos = 'H')
-# Note: Include = FALSE implies the code is executed, but not printed in your pdf.
-# warning and message = FALSE implies ugly messages and warnings are removed from your pdf.
-# These should be picked up when you execute the command chunks (code sections below) in your rmd, not printed in your paper!
-
-# Lets load in example data, and see how this can be stored and later called from your 'data' folder.
-if(!require("tidyverse")) install.packages("tidyverse")
-library(tidyverse)
-Example_data <- Texevier::Ex_Dat
-
-# Notice that as you are working in a .Rproj file (I am assuming you are) - the relative paths of your directories start at your specified root.
-# This means that when working in a .Rproj file, you never need to use getwd() - it is assumed as your base root automatically.
-write_rds(Example_data, path = "data/Example_data.rds")
-
 ```
 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo    = FALSE,
+  message = FALSE,
+  warning = FALSE,
+  error   = TRUE
+)
 
-<!-- ############################## -->
-<!-- # Start Writing here: -->
-<!-- ############################## -->
-
-# Introduction \label{Introduction}
-
-
-
-The goal is to comment on two statements:
-
-The South African rand (ZAR) has been one of the most volatile currencies.
-
-The ZAR performs well during favorable G10 carry trade conditions and when the USD is strong (risk-on).
-
-We are to measure volatility, compare currencies, and use tables, graphs, stratification, and statistics.
-
-
-
-
-
-Steps:
-
-Load the necessary data and packages.
-
-Calculate returns and clean the data (if not already done).
-
-Measure volatility: we can use standard deviation, but also GARCH models to capture time-varying volatility.
-
-Compare the volatility of ZAR to other currencies.
-
-Analyze the relationship between ZAR and carry trade conditions (using the carry data) and the strength of the USD (using BBDXY).
-
-We are to use univariate GARCH for volatility and multivariate GARCH (DCC, GO-GARCH) for correlation
-
-We will:
-
-Load the data and calculate log returns for the currencies.
-
-Use univariate GARCH to model the volatility of ZAR and other currencies, and compare.
-
-Use multivariate GARCH (DCC and GO-GARCH) to study the time-varying correlation between ZAR and other currencies, and between ZAR and the dollar index (BBDXY) and carry trade conditions.
-
-Volatility Persistence: Show if ZAR has higher GARCH persistence (α + β) than peers
-
-Leverage Effects: Use gjrGARCH or eGARCH to test if negative shocks have larger impact
-
-Regime Dependence: Demonstrate how ZAR volatility and correlations change with:
-
-Dollar strength periods
-
-Carry trade favorable environments
-
-Risk-on/risk-off episodes (using VIX)
-
-Forecast Performance: Use rolling GARCH to show VaR accuracy for ZAR
-
-
-```{R}
-# ------------------------------------------------------------------
-# 1. Load and tidy currency returns (all vs USD)
-# ------------------------------------------------------------------
 pacman::p_load(
   tidyverse,
   lubridate,
-  tbl2xts,
+  zoo,
   PerformanceAnalytics,
-  ggthemes,
-  RcppRoll
+  rugarch,
+  knitr,
+  scales
 )
-
-cncy   <- readr::read_rds("data/currencies.rds")      # wide: date + currencies
-Carry  <- readr::read_rds("data/cncyCarry.rds")       # global carry factor / panel
-value  <- readr::read_rds("data/cncyvalue.rds")       # currency value factor
-cncyIV <- readr::read_rds("data/cncyIV.rds")          # FX implied vols
-bbdxy  <- readr::read_rds("data/bbdxy.rds")           # Bloomberg Dollar Index
-
-# Assume cncy is wide: date + one column per currency return (e.g. "ZAR", "EUR", "GBP", ...)
-cncy_long <- 
-  cncy %>% 
-  pivot_longer(
-    cols = -date,
-    names_to = "ccy",
-    values_to = "ret"
-  ) %>% 
-  mutate(
-    date = as.Date(date),
-    year = year(date)
-  )
-
-# ------------------------------------------------------------------
-# 2. Annualised realised volatility by year and currency
-# ------------------------------------------------------------------
-vol_annual <- 
-  cncy_long %>% 
-  group_by(ccy, year) %>% 
-  summarise(
-    ann_sd  = sd(ret, na.rm = TRUE) * sqrt(252),
-    ann_var = var(ret, na.rm = TRUE) * 252,
-    .groups = "drop"
-  )
-
-# Rank currencies by typical volatility over the sample
-vol_rank <- 
-  vol_annual %>% 
-  group_by(ccy) %>% 
-  summarise(
-    mean_ann_sd = mean(ann_sd, na.rm = TRUE),
-    p75_ann_sd  = quantile(ann_sd, 0.75, na.rm = TRUE),
-    .groups = "drop"
-  ) %>% 
-  arrange(desc(mean_ann_sd)) %>% 
-  mutate(rank = row_number())
-
-# Nice table with ZAR highlighted
-vol_rank %>% 
-  mutate(
-    is_ZAR = if_else(ccy == "ZAR", "ZAR", "Other")
-  ) %>% 
-  arrange(rank)
-
 ```
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# Conclusion
-
-I hope you find this template useful. Remember, stackoverflow is your friend - use it to find answers to questions. Feel free to write me a mail if you have any questions regarding the use of this package. To cite this package, simply type citation("Texevier") in Rstudio to get the citation for @Texevier (Note that uncited references in your bibtex file will not be included in References).
-
-<!-- Make title of bibliography here: -->
-<!-- \newpage -->
-
 \newpage
+
+# Introduction {-}
+
+Here I restate the two claims I need to assess:
+
+1. The ZAR has been **one of the most volatile currencies** over recent years.
+2. The ZAR tends to **perform well when G10 carry trades are favourable and valuations are cheap**, and it is **one of the currencies that benefits when the Dollar is strong**, indicating a risk on environment.
+
+I explain that I will use:
+
+* Cross sectional and time series measures of realised volatility.
+* GARCH type models to describe conditional volatility and asymmetry.
+* Factor based analysis using carry, value and Dollar strength series.
+
+# Data {-}
+
+I describe the data files:
+
+* `currencies.rds`:
+
+  * Currency return series versus the USD for a cross section of currencies, including ZAR.
+
+* `cncyCarry.rds`:
+
+  * Currency **carry factor** series.
+
+* `cncyvalue.rds`:
+
+  * Currency **value factor** series.
+
+* `cncyIV.rds`:
+
+  * Implied volatility or related risk measures by currency.
+
+* `bbdxy.rds`:
+
+  * US Dollar broad index.
+
+I specify:
+
+* Sample period used.
+* Frequency (daily or weekly).
+* How I align the series (common sample, handling missing values).
+
+# Methodology {-}
+
+## Realised volatility and cross sectional ranking {-}
+
+* I compute **realised volatility** measures for each currency:
+
+  * For example annualised standard deviation of daily or weekly returns over a rolling window.
+* I construct:
+
+  * Time average volatility rankings.
+  * Possibly volatility distributions by currency.
+
+This allows me to see where ZAR sits relative to other currencies.
+
+## GARCH modelling of ZAR volatility {-}
+
+* I fit a **univariate GARCH type model** (for example GARCH(1,1) or GJR-GARCH) to ZAR returns.
+* I examine:
+
+  * Persistence of volatility.
+  * Asymmetry in response to positive and negative shocks.
+  * How conditional variance behaves over time.
+
+These estimates help to characterise the dynamic nature of ZAR volatility.
+
+## Relationship with carry and value factors {-}
+
+* I relate ZAR returns to:
+
+  * The **carry factor** series.
+  * The **value factor** series.
+* I use:
+
+  * Simple correlations.
+  * Possibly regressions or conditional averages when carry/value are high or low.
+
+This speaks directly to whether ZAR tends to perform well in favourable carry or valuation regimes.
+
+## Relationship with Dollar strength and market regimes {-}
+
+* I relate ZAR returns to **Dollar strength** using `bbdxy`:
+
+  * Correlations between ZAR and Dollar index.
+  * Conditional returns when the Dollar is strengthening or weakening.
+* I may define simple **regimes**:
+
+  * Strong Dollar periods versus weak Dollar periods.
+  * High risk on (carry profitable) versus risk off regimes.
+
+This allows me to evaluate whether ZAR truly “benefits” when the Dollar is strong or rather tends to weaken.
+
+# Results {-}
+
+## Volatility ranking of ZAR {-}
+
+* I present tables or charts showing:
+
+  * Realised volatility rankings over the sample.
+  * Where the ZAR stands relative to emerging market and G10 currencies.
+* I interpret whether the data support the claim that ZAR is among the most volatile currencies.
+
+## GARCH evidence on ZAR volatility {-}
+
+* I summarise:
+
+  * Estimated GARCH parameters and persistence.
+  * Any asymmetry in the reaction to shocks.
+  * Time series of conditional variance from the model.
+* I comment on whether volatility clustering and shock responses are particularly extreme.
+
+## ZAR performance versus carry and value {-}
+
+* I report:
+
+  * Correlations between ZAR returns and carry/value factors.
+  * Behaviour of ZAR in high carry and low valuation states.
+* I discuss whether ZAR tends to perform well in those favourable environments.
+
+## ZAR and Dollar strength {-}
+
+* I present evidence on:
+
+  * The sign and magnitude of correlation between ZAR and the Dollar index.
+  * Conditional ZAR returns in strong versus weak Dollar periods.
+* I interpret whether ZAR **benefits from Dollar strength** or is more typically hurt by it.
+
+# Conclusion {-}
+
+I bring the evidence together to answer:
+
+* Is the ZAR indeed one of the most volatile currencies?
+* How does ZAR behaviour relate to carry and value regimes?
+* Does the data support or contradict the claim that ZAR benefits from Dollar strength?
+
+I highlight any nuances (for example dependence on sample period or crisis episodes) and note limitations.
 
 # References {-}
 
 <div id="refs"></div>
 
-
 # Appendix {-}
 
-## Appendix A {-}
+## Appendix A: GARCH specification details {-}
 
-Some appendix information here
+Extra tables with parameter estimates or model selection.
 
-## Appendix B {-}
+## Appendix B: Additional volatility and factor plots {-}
 
+Additional charts showing volatility comparisons and regime behaviour.
+
+---

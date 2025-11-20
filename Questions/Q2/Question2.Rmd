@@ -1,204 +1,176 @@
 ---
-title: "Paged HTML Document"
-author: "NF Katzke"
-date: "November 2021"
-# date: "`r Sys.Date()`"
-bibliography: Tex/ref.bib       # Do not edit: Keep this naming convention and location.
+title: "Question 2: Peaks and Troughs in JSE Stocks"
+author: "Precious Nhamo "
+date: "`r Sys.Date()`"
+bibliography: Tex/ref.bib
 output:
   pagedown::html_paged:
-    # template: wp_paged.html
-    # css: ['wp.css', 'wp-fonts.css', 'wp-page.css']
-    css: ["Template/default-fonts-Texevier.css", "Template/default-page-Texevier.css", "Template/default-Texevier.css"]
-    csl: Template/harvard-stellenbosch-university.csl # referencing format used.
+    css: ["Template/default-fonts-Texevier.css",
+          "Template/default-page-Texevier.css",
+          "Template/default-Texevier.css"]
+    csl: Template/harvard-stellenbosch-university.csl
     template: ["Template/paged-Texevier.html"]
-
     toc: true
-    # change to true for a self-contained document, but it'll be a litte slower for Pandoc to render
-    self_contained: TRUE
+    self_contained: true
 abstract: |
-    This is an abstract. Much can be written here. Uncomment this line to go without an abstract.
-    Abstracts have no spaces, but can have bullets.
-
-    Bullets can be created as follows
-
-    + You can add bullets, but do not add colons please.
-
-    + Line breaks are also not permitted.
-
+    This report investigates peak to trough behaviour in South African
+    equity returns by size group and sector over the past decade. Using
+    daily holdings and returns data with size and sector labels, I
+    evaluate whether smaller stocks are more volatile than larger ones,
+    quantify typical annual peak to trough moves for different size and
+    sector groupings and highlight additional cross sectional insights
+    from the distribution of drawdowns.
 ---
 
+
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, message=FALSE, warning=FALSE)
-pacman::p_load(modelsummary, gt, knitr, kableExtra, tidyverse)
+knitr::opts_chunk$set(
+  echo    = FALSE,
+  message = FALSE,
+  warning = FALSE,
+  error   = TRUE
+)
+
+pacman::p_load(
+  tidyverse,
+  lubridate,
+  zoo,
+  PerformanceAnalytics,
+  ggthemes,
+  patchwork,
+  broom,
+  knitr,
+  scales
+)
 ```
 
 \newpage
 
 # Introduction {-}
 
-References are to be made as follows: [@fama1997] and @grinold2000 Such authors could also be referenced in brackets [@grinold2000] and together [@fama1997 \& @grinold2000]. Source the reference code from scholar.google.com by clicking on ``cite'' below article name. Then select BibTeX at the bottom of the Cite window, and proceed to copy and paste this code into your ref.bib file, located in the directory's Tex folder. Open this file in Rstudio for ease of management, else open it in your preferred Tex environment. Add and manage your article details here for simplicity - once saved, it will self-adjust in your paper.
+Here I frame the problem:
 
-> I suggest renaming the top line after \@article, as done in the template ref.bib file, to something more intuitive for you to remember. Do not change the rest of the code. Also, be mindful of the fact that bib references from google scholar may at times be incorrect. Reference Latex forums for correct bibtex notation.
+* A quantitative analyst suggested that **peak to trough movements** within a year are very large for mid, large and small capitalisation stocks on the JSE.
+* My supervisor asked me to test this claim with proper data, focusing on:
 
-Writing in Rmarkdown is surprizingly easy - see [this website](https://www.rstudio.com/wp-content/uploads/2015/03/rmarkdown-reference.pdf) cheatsheet for a summary on writing Rmd writing tips.
+  1. Whether **smaller stocks are more volatile** than larger ones locally.
+  2. How **annual peak to trough moves** compare across size groups and sectors.
+  3. Any other interesting insights from the behaviour of drawdowns.
 
-# Data  {-}
+# Data {-}
 
-Notice how I used the curly brackets and dash to remove the numbering of the data section.
+I describe the data source:
 
-Discussion of data should be thorough with a table of statistics and ideally a figure.
+* `Hold_Rets_Sectors.rds`:
 
-In your tempalte folder, you will find a Data and a Code folder. In order to keep your data files neat, store all of them in your Data folder. Also, I strongly suggest keeping this Rmd file for writing and executing commands, not writing out long pieces of data-wrangling. In the example below, I simply create a ggplot template for scatter plot consistency. I suggest keeping all your data in a data folder.
+  * Daily stock level returns.
+  * Stock identifiers, size group labels (for example Small, Mid, Large, Unclassified).
+  * Sector classification for each stock.
 
-<!-- The following is a code chunk. It must have its own unique name (after the r), or no name. After the comma follows commands for R which are self-explanatory. By default, the code and messages will not be printed in your pdf, just the output: -->
+I specify:
 
-```{r }
+* The sample period used (start and end dates).
+* How many stocks and sectors are in the sample.
+* Any filters:
 
-  # This is just a random plot to show you a plot. This is done if the getwd() does not point to your Template's directory.
-  # Set WD below to your project's working directory.
+  * Minimum observation counts per stock.
+  * Handling of missing or extreme returns.
 
-  g <-
-  ggplot(data = mtcars) +
-  geom_point(aes(x = disp, y = hp, color = cyl)) +
-  theme_bw() +
-  # theme(legend.position = "none") +
-  theme(plot.title = element_text(size = 10)) +
-  theme(axis.title = element_text(size = 10),
-        axis.title.x = element_text()) +
-  labs(y = "y-axis", x = "x-axis", title = "Some amazing plot")
+# Methodology {-}
 
-g
+## Construction of volatility and drawdown measures {-}
 
-```
+* I define simple **volatility measures** by stock and by group:
 
+  * For example annualised daily standard deviation per stock, then average within size groups.
+* For peak to trough analysis, I define:
 
+  * Annual maximum drawdown per stock (largest peak to trough fall in each calendar year).
+  * Possibly also typical within year range measures.
 
+## Grouping by size and sector {-}
 
+* I classify observations by:
 
-#  Methodology \label{Meth} {-}
+  * **Size group** (Small, Mid, Large, Unclassified).
+  * **Sector** (Financials, Industrials, Resources, etc.).
+* I compute:
 
-## Subsection {-}
-Ideally do not overuse subsections. It equates to bad writing.^[This is an example of a footnote by the way. Something that should also not be overused.]
+  * Annual summary statistics by size group.
+  * Annual statistics by sector.
+  * Combined views by **size and sector** where sample sizes permit.
 
-## Math section {-}
+## Comparison across years and groups {-}
 
-Equations should be written as such:
+* I calculate, for each year:
 
-\begin{align}
-\beta = \sum_{i = 1}^{\infty}\frac{\alpha^2}{\sigma_{t-1}^2} \label{eq1} \\
-\int_{x = 1}^{\infty}x_{i} = 1 \notag
-\end{align}
+  * Typical (for example mean or median) annual maximum drawdown for each size group.
+  * Typical drawdown by sector.
+* I set up visuals that:
 
-If you would like to see the equations as you type in Rmarkdown, use $ symbols instead (see this for yourself by adjusted the equation):
+  * Compare the annual peak to trough behaviour across size and sector dimensions.
+  * Show whether patterns are stable over time or concentrated in particular stress years.
 
-$$
-\beta = \sum_{i = 1}^{\infty}\frac{\alpha^2}{\sigma_{t-1}^2} \\
-\int_{x = 1}^{\infty}x_{i} = 1
-$$
+## Additional insights {-}
 
-Note again the reference to equation \ref{eq1}. Writing nice math requires practice. Note I used a forward slashes to make a space in the equations. I can also align equations using  __\&__, and set to numbering only the first line. Now I will have to type ``begin equation'' which is a native \LaTeX command. Here follows a more complicated equation:
+* I explore further angles, for example:
 
+  * Whether high volatility years coincide with particularly large drawdowns for small caps.
+  * Whether some sectors systematically show deeper drawdowns.
+  * How concentration or liquidity might relate to the observed behaviour.
 
-\begin{align}
-	y_t &= c + B(L) y_{t-1} + e_t   \label{eq2}    \\ \notag
-	e_t &= H_t^{1/2}  z_t ; \quad z_t \sim  N(0,I_N) \quad \& \quad H_t = D_tR_tD_t \\ \notag
-		D_t^2 &= {\sigma_{1,t}, \dots, \sigma_{N,t}}   \\ \notag
-		\sigma_{i,t}^2 &= \gamma_i+\kappa_{i,t}  v_{i, t-1}^2 +\eta_i  \sigma_{i, t-1}^2, \quad \forall i \\ \notag
-		R_{t, i, j} &= {diag(Q_{t, i, j}}^{-1}) . Q_{t, i, j} . diag(Q_{t, i, j}^{-1})  \\ \notag
-		Q_{t, i, j} &= (1-\alpha-\beta)  \bar{Q} + \alpha  z_t  z_t'  + \beta  Q_{t, i, j} \notag
-\end{align}
+# Results {-}
 
-Note that in \ref{eq2} I have aligned the equations by the equal signs. I also want only one tag, and I create spaces using ``quads''.
+## Are smaller stocks more volatile? {-}
 
-See if you can figure out how to do complex math using the two examples provided in \ref{eq1} and \ref{eq2}.
+* I report:
 
-<!-- $$ -->
-<!-- This is a commented out section in the writing part. -->
-<!-- Comments are created by highlighting text, amnd pressing CTL+C -->
-<!-- \\begin{align} -->
-<!-- \\beta = \\alpha^2 -->
-<!-- \end{align} -->
-<!-- $$ -->
+  * Average volatility by size group.
+  * Average annual maximum drawdowns by size group.
+* I discuss whether small caps indeed show higher volatility and deeper peak to trough moves than mid and large caps.
 
-## Results {-}
+## Peak to trough movements across size groups and sectors {-}
 
-Tables can be included as follows. Use the _xtable_ (or kable) package for tables. Table placement = H implies Latex tries to place the table Here, and not on a new page (there are, however, very many ways to skin this cat. Luckily there are many forums online!).
+* I present tables or heat maps of annual maximum drawdowns by:
 
-```{r table-1, echo=TRUE, message=FALSE, warning=FALSE, results="asis"}
-library(knitr)
-library(kableExtra)
+  * Size group and year.
+  * Sector and year.
+* I interpret:
 
-data <- mtcars[1:5,] %>% tibble::as_tibble()
+  * Which groups suffer the deepest drawdowns in typical years.
+  * Whether specific stress years drive most of the effect.
 
-table <- kable(data, row.names = TRUE,
-      caption = 'Table with kable() and kablestyling()',
-      format = "html", booktabs = T) %>%
-        kable_styling(full_width = T,
-                      latex_options = c("striped",
-                                        "scale_down",
-                                        "HOLD_position"),
-                      font_size = 13)
-table
-```
+## Other notable patterns {-}
 
-To reference calculations __in text__, _do this:_ From table \@ref(tab:table-1) we see the average value of mpg is `r mean(mtcars[1:5,]$mpg)`. Notice the use of table-2 in the chunk name. That's the good stuff.
+* I highlight any additional interesting findings:
 
-\newpage
+  * For example particular sectors that behave defensively.
+  * Years where small caps outperformed despite higher drawdowns.
+  * Relationships between market conditions and drawdown patterns.
 
+# Conclusion {-}
 
-## Model summary
+I summarise the answers to the three main questions:
 
-
-Check [this](https://vincentarelbundock.github.io/modelsummary/articles/modelsummary.html) link out for more. Note this package also plays nicely with gt, kableExtra, etc.
-
-```{r}
-
-library(modelsummary);library(gt)
-
-# modelsummary works well with gt:
-
-Tab <-
-
-datasummary_skim(swiss,
-type="numeric",
- histogram=T,
- title = "Summary: Numeric variables", output = "gt") %>%
-
-        # column labels
-    tab_spanner(label = 'Statistics', columns = c("Mean", "SD")) %>%
-    tab_spanner(label = 'Quantiles', columns = starts_with("P")) %>%
-    # footnote
-    tab_footnote(footnote = md("A very **important** Footnote."),
-                 locations = cells_body(rows = 3, columns = 1)) %>%
-
-    tab_options(data_row.padding = px(4),table.width = pct(60),
-            column_labels.font.size = pct(100),
-            column_labels.vlines.width = 1, table.font.size = pct(60))
-
-Tab
-```
-
-
-
-```{r}
-
-datasummary_correlation(mtcars)
-
-```
-
+* Whether smaller stocks are more volatile than larger stocks.
+* How peak to trough movements differ across size groups and sectors.
+* Any key extra insights relevant to risk management or portfolio construction.
 
 # References {-}
 
 <div id="refs"></div>
 
-
 # Appendix {-}
 
-## Appendix A {-}
+## Appendix A: Extra tables {-}
 
-Some appendix information here
+Detailed year by year drawdown tables.
 
-## Appendix B {-}
+## Appendix B: Extra figures {-}
+
+Additional heat maps or distribution plots of drawdowns and volatility.
+
+---
 
 
 

@@ -29,38 +29,51 @@ We can compute a measure of dispersion (cross-sectional standard
 deviation of returns) and then plot the fund’s performance against this
 dispersion.
 
-``` r
-# Load readr for rds data sets 
-pacman::p_load(readr, fmxdat)
-
-
-
-# Load the data
-Benchmark <- read_rds("data/Capped_SWIX.rds")
-Active_Managers <- read_rds("data/Active_Managers.rds")
-ABC_Fund <- read_rds("data/ABC_Fund.rds")
-```
-
 Since we have a benchmark , ABC fund industry peer we can’t analyse all
 individual industry peers - we will calculate the mean or average of the
 peers
 
+We will be using analysis data to continue with our questions
+
+We will do other interesting things (the above tables answer how much we
+differe from the rest of the industry)
+
 ``` r
-# Load required libraries with pacman
+# Q1: ABC Fund vs Benchmark and Peers – 
+#Libraries and data ----
+
 pacman::p_load(
+  readr,
   dplyr,
+  tidyr,
   ggplot2,
   lubridate,
-  tidyr,
+  tbl2xts,
+  PerformanceAnalytics,
+  RcppRoll,
   roll,
-  zoo
+  zoo,
+  fmxdat
 )
+```
 
-# 1. Set common sample based on ABC Fund dates
+Load Rmd helper functions (themes etc.) if you use them elsewhere
+devtools::source_gist(“<https://gist.github.com/Nicktz/bd2614f8f8a551881a1dc3c11a1e7268>”)
+
+``` r
+# Raw data
+Benchmark       <- read_rds("data/Capped_SWIX.rds")
+Active_Managers <- read_rds("data/Active_Managers.rds")
+ABC_Fund        <- read_rds("data/ABC_Fund.rds")
+```
+
+I fix a common sample based on ABC Fund dates
+
+``` r
 start_date <- as.Date("2012-07-31")
 end_date   <- as.Date("2025-10-31")
 
-# 2. Filter each data set to the common period
+# Filter each data set to the common period
 benchmark_common <- 
   Benchmark %>% 
   filter(date >= start_date, date <= end_date)
@@ -74,12 +87,12 @@ abc_data <-
   filter(date >= start_date, date <= end_date) %>% 
   select(date, ABC_Returns = Returns)
 
-# 3. Prepare benchmark data
+# Prepare benchmark data
 bench_data <- 
   benchmark_common %>% 
   select(date, Benchmark_Returns = Returns)
 
-# 4. Prepare peer summary by date
+# Peer summary by date (average peer return)
 peers_data <- 
   active_managers_common %>% 
   group_by(date) %>% 
@@ -90,14 +103,13 @@ peers_data <-
     .groups              = "drop"
   )
 
-# 5. Merge into a single analysis data set
+# Single analysis data set we use for most of Q1
 analysis_data <- 
   abc_data %>% 
   left_join(bench_data, by = "date") %>% 
-  left_join(peers_data,  by = "date")
+  left_join(peers_data, by = "date")
 
-# Optional quick check
-dplyr::glimpse(analysis_data)
+glimpse(analysis_data)
 ```
 
     ## Rows: 160
@@ -109,14 +121,11 @@ dplyr::glimpse(analysis_data)
     ## $ Peers_Median_Returns <dbl> 0.02155600, 0.01871670, 0.01590045, 0.03509465, 0…
     ## $ Peers_Count          <int> 88, 87, 88, 88, 87, 88, 90, 90, 92, 91, 94, 94, 9…
 
-We will be using analysis data to continue with our questions
+### 2. Rolling regression vs benchmark (beta time series)
 
 ``` r
-pacman::p_load(
-  dplyr,
-  tbl2xts,
-  PerformanceAnalytics
-)
+# 2. Rolling 3-year beta vs benchmark (ABC + peer avg) ----
+
 
 # Ra: assets we are analysing (ABC + peer average)
 Ra_xts <- 
@@ -128,37 +137,28 @@ Ra_xts <-
     Peer_Average = Peers_Avg_Returns
   ) %>% 
   mutate(across(-date, ~ coalesce(., 0))) %>% 
-  tbl_xts(
-    cols_to_xts = c("ABC_Fund", "Peer_Average")
-  )
+  tbl_xts(cols_to_xts = c("ABC_Fund", "Peer_Average"))
 
 # Rb: benchmark we compare against
 Rb_xts <- 
   analysis_data %>% 
   arrange(date) %>% 
-  select(
-    date,
-    Benchmark = Benchmark_Returns
-  ) %>% 
+  select(date, Benchmark = Benchmark_Returns) %>% 
   mutate(Benchmark = coalesce(Benchmark, 0)) %>% 
-  tbl_xts(
-    cols_to_xts = "Benchmark"
-  )
-```
+  tbl_xts(cols_to_xts = "Benchmark")
 
-``` r
-# Rolling 3 year betas (36 months) vs benchmark
+# Rolling 3-year betas (36 months) vs benchmark
 PerformanceAnalytics::chart.RollingRegression(
   Ra         = Ra_xts,
   Rb         = Rb_xts,
   width      = 36,
   attribute  = "Beta",
   legend.loc = "topleft",
-  main       = "Rolling 3 year beta vs benchmark: ABC vs peer average"
+  main       = "Rolling 3-year beta vs benchmark: ABC vs peer average"
 )
 ```
 
-![](README_files/figure-gfm/unnamed-chunk-3-1.png)<!-- -->
+![](README_files/figure-gfm/unnamed-chunk-4-1.png)<!-- -->
 
 ``` r
 # Full sample betas vs benchmark
@@ -172,69 +172,542 @@ PerformanceAnalytics::CAPM.beta(
     ## ABC_Fund                0.616
     ## Peer_Average            0.845
 
-Box-Scatter Plot ( I struggled with this part)
+### 3. Boxplot of 3-year rolling betas
 
 ``` r
-pacman::p_load(
-  dplyr,
-  tidyr,
-  ggplot2,
-  roll,
-  fmxdat
-)
+# 3. Boxplot of 3-year rolling betas (Active vs ABC) ----
 
-# 1. Compute rolling 3 year betas (36 months) vs benchmark
 
-# make sure data is ordered
-beta_data <- 
-  analysis_data %>% 
-  arrange(date)
+# 3.1 3-year rolling annualised returns for the benchmark
+Benchmark_roll <-
+  benchmark_common %>%
+  arrange(date) %>%
+  group_by(Name) %>%   # only one benchmark name, but keep for consistency
+  mutate(
+    bench_roll = RcppRoll::roll_prod(1 + Returns,
+                                     n     = 36,
+                                     fill  = NA,
+                                     align = "right")^(12 / 36) - 1
+  ) %>%
+  group_by(date, Name) %>%
+  filter(any(!is.na(bench_roll))) %>%
+  ungroup() %>%
+  mutate(Y = format(date, "%Y")) %>%
+  select(date, Y, bench_roll)
 
-# rolling regression: y on x with width = 36
-# ABC vs Benchmark
-roll_abc <- 
-  roll::roll_lm(
-    x     = as.matrix(beta_data$Benchmark_Returns),
-    y     = beta_data$ABC_Returns,
-    width = 36
+# 3.2 3-year rolling annualised returns for all active managers
+Active_Managers_roll <-
+  active_managers_common %>%
+  arrange(date) %>%
+  group_by(Name) %>%
+  mutate(
+    active_roll = RcppRoll::roll_prod(1 + Returns,
+                                      n     = 36,
+                                      fill  = NA,
+                                      align = "right")^(12 / 36) - 1
+  ) %>%
+  group_by(date, Name) %>%
+  filter(any(!is.na(active_roll))) %>%
+  ungroup() %>%
+  mutate(Y = format(date, "%Y")) %>%
+  select(date, Y, Name, active_roll)
+
+# 3.3 3-year rolling annualised returns for the ABC Fund
+ABC_Fund_roll <-
+  ABC_Fund %>%
+  filter(date >= start_date, date <= end_date) %>%
+  arrange(date) %>%
+  group_by(Name) %>%
+  mutate(
+    ABC_roll = RcppRoll::roll_prod(1 + Returns,
+                                   n     = 36,
+                                   fill  = NA,
+                                   align = "right")^(12 / 36) - 1
+  ) %>%
+  group_by(date, Name) %>%
+  filter(any(!is.na(ABC_roll))) %>%
+  ungroup() %>%
+  mutate(Y = format(date, "%Y")) %>%
+  select(date, Y, ABC_roll)
+
+# 3.4 Betas for Active Managers: regress 3y rolling returns on benchmark, by year and fund
+AM_Beta <-
+  Active_Managers_roll %>%
+  left_join(Benchmark_roll, by = c("date", "Y")) %>%
+  group_by(Y, Name) %>%
+  summarise(
+    AM_Beta = coef(lm(active_roll ~ bench_roll))[2],
+    .groups = "drop"
   )
 
-# Peer average vs Benchmark
-roll_peer <- 
-  roll::roll_lm(
-    x     = as.matrix(beta_data$Benchmark_Returns),
-    y     = beta_data$Peers_Avg_Returns,
-    width = 36
+# 3.5 Betas for ABC Fund: same but only one fund per year
+ABC_Beta <-
+  ABC_Fund_roll %>%
+  left_join(Benchmark_roll, by = c("date", "Y")) %>%
+  group_by(Y) %>%
+  summarise(
+    ABC_Beta = coef(lm(ABC_roll ~ bench_roll))[2],
+    .groups  = "drop"
   )
 
-# extract slope (beta) from coefficients[, 2]
-rolling_betas <- 
-  tibble(
-    date        = beta_data$date,
-    ABC_Fund    = as.numeric(roll_abc$coefficients[, 2]),
-    Peer_Average = as.numeric(roll_peer$coefficients[, 2])
-  ) %>% 
-  pivot_longer(
-    cols      = c(ABC_Fund, Peer_Average),
-    names_to  = "Series",
-    values_to = "Beta"
-  ) %>% 
-  filter(!is.na(Beta))   # drop early windows with no full 36 months
+# 3.6 Data for boxplot: peer beta distribution and ABC beta per year
+# 3.6 Data for boxplot: peer beta distribution and ABC beta per year
+Main_box <-
+  AM_Beta %>%
+  left_join(ABC_Beta, by = "Y") %>%
+  filter(Y >= "2016")   # optional: keep recent years only
 
-# 2. Boxplot with scatter (jitter) on top
-
-ggplot(rolling_betas, aes(x = Series, y = Beta)) +
-  geom_jitter(width = 0.1, alpha = 0.4) +   # scatter points
-  geom_boxplot(width = 0.3, alpha = 0.3, outlier.shape = NA) +  # box on top
-  labs(
-    title = "Distribution of rolling 3 year betas vs benchmark",
-    x     = NULL,
-    y     = "Rolling 3 year beta"
+# 3.7 Boxplot: Year on x, Beta on y
+Main_box_plot <-
+  Main_box %>%
+  ggplot() +
+  geom_boxplot(
+    aes(x = factor(Y), y = AM_Beta),
+    colour = "darkslategray",
+    fill   = "lightblue",
+    width  = 0.5
   ) +
-  theme_fmx()
+  geom_point(
+    aes(x = factor(Y), y = ABC_Beta),
+    colour = "#FF4500",
+    size   = 3,
+    shape  = 18
+  ) +
+  labs(
+    title    = "3-year rolling beta: Active managers vs ABC Fund",
+    subtitle = "Distribution of active manager betas vs ABC beta (per year)",
+    x        = "Year",
+    y        = "3-year rolling beta vs benchmark",
+    caption  = paste(
+      "Note:\n",
+      "The orange diamond shows the ABC Fund's 3-year rolling beta.\n",
+      "The boxplots show the distribution of active managers' betas for each year."
+    )
+  ) +
+  theme_fmx(
+    title.size    = ggpts(30),
+    subtitle.size = ggpts(5),
+    caption.size  = ggpts(25),
+    CustomCaption = TRUE
+  ) +
+  scale_y_continuous(breaks = seq(from = -2, to = 3, by = 0.5))
+
+Main_box_plot
 ```
 
-![](README_files/figure-gfm/unnamed-chunk-4-1.png)<!-- -->
+![](README_files/figure-gfm/unnamed-chunk-5-1.png)<!-- -->
+
+### 4. Summary statistics, SFM, CAPM alpha / beta
+
+``` r
+# 4. Stats, trailing performance, downside risk, SFM ----
+
+# Combine benchmark, ABC and peer average into one xts object
+returns_xts <- merge(Rb_xts, Ra_xts, join = "inner")
+colnames(returns_xts) <- c("Benchmark", "ABC_Fund", "Peer_Average")
+
+# 4.1 Summary statistics
+PerformanceAnalytics::table.Stats(returns_xts)
+```
+
+    ##                 Benchmark ABC_Fund Peer_Average
+    ## Observations     160.0000 160.0000     160.0000
+    ## NAs                0.0000   0.0000       0.0000
+    ## Minimum           -0.1669  -0.0715      -0.1486
+    ## Quartile 1        -0.0150  -0.0040      -0.0130
+    ## Median             0.0141   0.0123       0.0127
+    ## Arithmetic Mean    0.0099   0.0117       0.0084
+    ## Geometric Mean     0.0091   0.0112       0.0079
+    ## Quartile 3         0.0321   0.0290       0.0268
+    ## Maximum            0.1418   0.1509       0.1303
+    ## SE Mean            0.0030   0.0024       0.0026
+    ## LCL Mean (0.95)    0.0039   0.0069       0.0033
+    ## UCL Mean (0.95)    0.0158   0.0165       0.0135
+    ## Variance           0.0014   0.0009       0.0011
+    ## Stdev              0.0379   0.0308       0.0329
+    ## Skewness          -0.4396   0.2528      -0.4085
+    ## Kurtosis           2.8386   2.0787       3.3731
+
+``` r
+# 4.2 Trailing-period performance (months: 3, 6, 12, 36, 60)
+PerformanceAnalytics::table.TrailingPeriods(
+  R       = returns_xts,
+  periods = c(3, 6, 12, 36, 60)
+)
+```
+
+    ##                       Benchmark ABC_Fund Peer_Average
+    ## Last 3 month Average     0.0396   0.0304       0.0307
+    ## Last 6 month Average     0.0322   0.0278       0.0282
+    ## Last 12 month Average    0.0234   0.0163       0.0174
+    ## Last 36 month Average    0.0161   0.0118       0.0134
+    ## Last 60 month Average    0.0162   0.0140       0.0139
+    ## Last 3 month Std Dev     0.0239   0.0139       0.0132
+    ## Last 6 month Std Dev     0.0174   0.0105       0.0098
+    ## Last 12 month Std Dev    0.0213   0.0170       0.0149
+    ## Last 36 month Std Dev    0.0362   0.0228       0.0290
+    ## Last 60 month Std Dev    0.0365   0.0256       0.0302
+
+``` r
+# 4.3 Downside risk measures (Rf = 0)
+PerformanceAnalytics::table.DownsideRisk(
+  R  = returns_xts,
+  Rf = 0
+)
+```
+
+    ##                              Benchmark ABC_Fund Peer_Average
+    ## Semi Deviation                  0.0280   0.0216       0.0241
+    ## Gain Deviation                  0.0232   0.0217       0.0205
+    ## Loss Deviation                  0.0257   0.0186       0.0226
+    ## Downside Deviation (MAR=10%)    0.0272   0.0199       0.0241
+    ## Downside Deviation (Rf=0%)      0.0232   0.0160       0.0201
+    ## Downside Deviation (0%)         0.0232   0.0160       0.0201
+    ## Maximum Drawdown                0.3019   0.1370       0.2488
+    ## Historical VaR (95%)           -0.0462  -0.0410      -0.0381
+    ## Historical ES (95%)            -0.0741  -0.0534      -0.0640
+    ## Modified VaR (95%)             -0.0548  -0.0353      -0.0470
+    ## Modified ES (95%)              -0.0956  -0.0507      -0.0845
+
+``` r
+# 4.4 Single-factor model vs benchmark
+PerformanceAnalytics::table.SFM(
+  Ra = returns_xts[, c("ABC_Fund", "Peer_Average")],
+  Rb = returns_xts[, "Benchmark"],
+  Rf = 0
+)
+```
+
+    ##                     ABC_Fund to Benchmark Peer_Average to Benchmark
+    ## Alpha                              0.0056                    0.0001
+    ## Beta                               0.6160                    0.8450
+    ## Alpha Robust                       0.0059                    0.0002
+    ## Beta Robust                        0.5991                    0.8453
+    ## Beta+                              0.6527                    0.8610
+    ## Beta-                              0.4864                    0.8684
+    ## Beta+ Robust                       0.6346                    0.8593
+    ## Beta- Robust                       0.4871                    0.8691
+    ## R-squared                          0.5761                    0.9507
+    ## R-squared Robust                   0.5248                    0.9285
+    ## Annualized Alpha                   0.0693                    0.0010
+    ## Correlation                        0.7590                    0.9750
+    ## Correlation p-value                0.0000                    0.0000
+    ## Tracking Error                     0.0858                    0.0325
+    ## Active Premium                     0.0277                   -0.0167
+    ## Information Ratio                  0.3229                   -0.5128
+    ## Treynor Ratio                      0.2322                    0.1167
+
+``` r
+# 4.5 Betas vs benchmark
+PerformanceAnalytics::CAPM.beta(
+  Ra = returns_xts[, c("ABC_Fund", "Peer_Average")],
+  Rb = returns_xts[, "Benchmark"],
+  Rf = 0
+)
+```
+
+    ##              Beta : Benchmark
+    ## ABC_Fund                0.616
+    ## Peer_Average            0.845
+
+``` r
+# 4.6 Annualised alpha for ABC vs benchmark (monthly data)
+(1 + PerformanceAnalytics::CAPM.alpha(
+  Ra = returns_xts[, "ABC_Fund"],
+  Rb = returns_xts[, "Benchmark"],
+  Rf = 0
+))^12 - 1
+```
+
+    ## [1] 0.06925132
+
+### 5. Cumulative returns: ABC vs peers vs benchmark
+
+``` r
+# 5. Cumulative returns ABC vs Peer Avg vs Benchmark ----
+
+cum_df <-
+  analysis_data %>%
+  arrange(date) %>%
+  transmute(
+    date,
+    Benchmark    = Benchmark_Returns,
+    ABC_Fund     = ABC_Returns,
+    Peer_Average = Peers_Avg_Returns
+  ) %>%
+  pivot_longer(
+    cols      = -date,
+    names_to  = "Series",
+    values_to = "ret"
+  ) %>%
+  group_by(Series) %>%
+  mutate(
+    ret    = coalesce(ret, 0),
+    CumRet = cumprod(1 + ret)   # growth of 1 rand
+  ) %>%
+  ungroup()
+
+g_cum <-
+  cum_df %>%
+  ggplot(aes(x = date, y = CumRet, colour = Series)) +
+  geom_line() +
+  labs(
+    title = "Cumulative returns: ABC Fund vs peer average and benchmark",
+    x     = "",
+    y     = "Growth of 1 rand"
+  ) +
+  theme_fmx()
+
+finplot(
+  g_cum,
+  x.date.dist = "2 years",
+  x.date.type = "%Y",
+  x.vert      = TRUE,
+  y.pct       = FALSE
+)
+```
+
+![](README_files/figure-gfm/unnamed-chunk-7-1.png)<!-- -->
+
+``` r
+# Log cumulative plot
+g_cum +
+  coord_trans(y = "log10") +
+  labs(
+    title = paste0(g_cum$labels$title, "\nLog Scaled"),
+    y     = "Log scaled cumulative returns"
+  )
+```
+
+![](README_files/figure-gfm/unnamed-chunk-7-2.png)<!-- -->
+
+------------------------------------------------------------------------
+
+### 6. Rolling 3 year annualised returns
+
+``` r
+# 6. Rolling 3-year annualised returns ----
+
+
+roll_df <-
+  analysis_data %>%
+  arrange(date) %>%
+  transmute(
+    date,
+    Benchmark    = Benchmark_Returns,
+    ABC_Fund     = ABC_Returns,
+    Peer_Average = Peers_Avg_Returns
+  ) %>%
+  pivot_longer(
+    cols      = -date,
+    names_to  = "Series",
+    values_to = "ret"
+  ) %>%
+  group_by(Series) %>%
+  mutate(
+    ret      = coalesce(ret, 0),
+    RollRets = RcppRoll::roll_prod(1 + ret, 36,
+                                   fill  = NA,
+                                   align = "right")^(12 / 36) - 1
+  ) %>%
+  group_by(date) %>%
+  filter(any(!is.na(RollRets))) %>%
+  ungroup()
+
+g_roll <-
+  roll_df %>%
+  ggplot(aes(x = date, y = RollRets, colour = Series)) +
+  geom_line(alpha = 0.7, linewidth = 1.1) +
+  labs(
+    title = "Rolling 3-year annualised returns",
+    x     = "",
+    y     = "Rolling 3-year return (annualised)"
+  ) +
+  theme_fmx()
+
+finplot(
+  g_roll,
+  x.date.dist = "2 years",
+  x.date.type = "%Y",
+  x.vert      = TRUE,
+  y.pct       = TRUE,
+  y.pct_acc   = 1
+)
+```
+
+![](README_files/figure-gfm/unnamed-chunk-8-1.png)<!-- -->
+
+------------------------------------------------------------------------
+
+### 7. Multi horizon annualised return bar plot
+
+``` r
+# 7. 6m / 1y / 3y / 5y annualised return bar chart ----
+
+
+idx <-
+  analysis_data %>%
+  arrange(date) %>%
+  transmute(
+    date,
+    Benchmark    = Benchmark_Returns,
+    ABC_Fund     = ABC_Returns,
+    Peer_Average = Peers_Avg_Returns
+  ) %>%
+  pivot_longer(
+    cols      = -date,
+    names_to  = "Series",
+    values_to = "ret"
+  ) %>%
+  arrange(date)
+
+dfplot <-
+  bind_rows(
+    # 6 months (not annualised)
+    idx %>%
+      filter(date >= fmxdat::safe_month_min(last(date), N = 6)) %>%
+      group_by(Series) %>%
+      summarise(mu = prod(1 + ret, na.rm = TRUE) - 1) %>%
+      mutate(Freq = "A"),
+    # 1 year
+    idx %>%
+      filter(date >= fmxdat::safe_month_min(last(date), N = 12)) %>%
+      group_by(Series) %>%
+      summarise(mu = prod(1 + ret, na.rm = TRUE)^(12 / 12) - 1) %>%
+      mutate(Freq = "B"),
+    # 3 years
+    idx %>%
+      filter(date >= fmxdat::safe_month_min(last(date), N = 36)) %>%
+      group_by(Series) %>%
+      summarise(mu = prod(1 + ret, na.rm = TRUE)^(12 / 36) - 1) %>%
+      mutate(Freq = "C"),
+    # 5 years
+    idx %>%
+      filter(date >= fmxdat::safe_month_min(last(date), N = 60)) %>%
+      group_by(Series) %>%
+      summarise(mu = prod(1 + ret, na.rm = TRUE)^(12 / 60) - 1) %>%
+      mutate(Freq = "D")
+  )
+
+to_string <- as_labeller(
+  c(
+    `A` = "6 Months",
+    `B` = "1 Year",
+    `C` = "3 Years",
+    `D` = "5 Years"
+  )
+)
+
+g_ann <-
+  dfplot %>%
+  ggplot() +
+  geom_bar(aes(Series, mu, fill = Series), stat = "identity") +
+  facet_wrap(~Freq, labeller = to_string, nrow = 1) +
+  labs(
+    x       = "",
+    y       = "Returns (Ann.)",
+    caption = "Note:\nReturns in excess of a year are in annualised terms."
+  ) +
+  fmx_fills() +
+  geom_label(
+    aes(Series, mu, label = paste0(round(mu, 4) * 100, "%")),
+    size     = ggpts(8),
+    alpha    = 0.35,
+    fontface = "bold",
+    nudge_y  = 0.002
+  ) +
+  theme_fmx(
+    CustomCaption = TRUE,
+    title.size    = ggpts(43),
+    subtitle.size = ggpts(38),
+    caption.size  = ggpts(30),
+    axis.size     = ggpts(37),
+    legend.size   = ggpts(35),
+    legend.pos    = "top"
+  ) +
+  theme(
+    axis.text.x  = element_blank(),
+    axis.title.y = element_text(vjust = 2),
+    strip.text.x = element_text(
+      face   = "bold",
+      size   = ggpts(35),
+      margin = margin(.1, 0, .1, 0, "cm")
+    )
+  )
+
+g_ann
+```
+
+![](README_files/figure-gfm/unnamed-chunk-9-1.png)<!-- -->
+
+### 8. Rolling 3 year volatility (annualised)
+
+``` r
+# 8. Rolling 3-year annualised volatility ----
+plot_dlog <-
+  analysis_data %>%
+  arrange(date) %>%
+  transmute(
+    date,
+    Benchmark    = Benchmark_Returns,
+    ABC_Fund     = ABC_Returns,
+    Peer_Average = Peers_Avg_Returns
+  ) %>%
+  pivot_longer(
+    cols      = -date,
+    names_to  = "Series",
+    values_to = "ret"
+  ) %>%
+  group_by(Series) %>%
+  mutate(
+    logret = log(1 + ret),
+    RollSD = RcppRoll::roll_sd(logret, 36,
+                               fill  = NA,
+                               align = "right") * sqrt(12)
+  ) %>%
+  filter(!is.na(RollSD)) %>%
+  ungroup()
+
+g_vol <-
+  plot_dlog %>%
+  ggplot() +
+  geom_line(aes(date, RollSD, colour = Series),
+            alpha = 0.7, linewidth = 1.25) +
+  labs(
+    title    = "Rolling 3-year annualised volatility",
+    subtitle = "",
+    x        = "",
+    y        = "Rolling 3-year SD (annualised)",
+    caption  = "Note:\nVolatility from 36-month log returns, annualised."
+  ) +
+  theme_fmx(
+    title.size    = ggpts(30),
+    subtitle.size = ggpts(5),
+    caption.size  = ggpts(25),
+    CustomCaption = TRUE
+  ) +
+  fmx_cols()
+
+finplot(
+  g_vol,
+  x.date.dist = "1 year",
+  x.date.type = "%Y",
+  x.vert      = TRUE,
+  y.pct       = TRUE,
+  y.pct_acc   = 1
+)
+```
+
+![](README_files/figure-gfm/unnamed-chunk-10-1.png)<!-- -->
+
+let’s do this : \## Or check out this risk-return scatter for several
+stocks since 2010…
+chart.RiskReturnScatter(R=xts.data.dailyreturns\[‘2003-01-01/’\]\[,c(“AGL”,
+“AMS”, “ANG”, “AOD
+
+# Table (I want to do a replicate from bonus practical 2 Financial Statistics I am having issues)
+
+Market dispersion
 
 ### Question 2
 
@@ -2419,7 +2892,7 @@ garchfit1
     ## 4    50     56.46       0.2162
     ## 
     ## 
-    ## Elapsed time : 0.450588
+    ## Elapsed time : 0.2647181
 
 ``` r
 # Extract coefficient table 
@@ -3110,7 +3583,7 @@ chart.StackedBar(
 )
 ```
 
-![](README_files/figure-gfm/unnamed-chunk-11-1.png)<!-- -->
+![](README_files/figure-gfm/unnamed-chunk-17-1.png)<!-- -->
 
 ## 6. CLUSTERING ANALYSIS FOR COMOVEMENT (prac 5 )
 
@@ -3145,4 +3618,4 @@ plot(hc,
      cex = 0.7)  # Smaller text for better fit
 ```
 
-![](README_files/figure-gfm/unnamed-chunk-12-1.png)<!-- -->
+![](README_files/figure-gfm/unnamed-chunk-18-1.png)<!-- -->
