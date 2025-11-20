@@ -1418,7 +1418,7 @@ garchfit1
     ## 4    50     56.46       0.2162
     ## 
     ## 
-    ## Elapsed time : 0.1500082
+    ## Elapsed time : 0.1779878
 
 ``` r
 # Extract coefficient table 
@@ -1849,7 +1849,7 @@ idea that good news rallies and periods of strong inflows can be
 associated with elevated and persistent volatility in an emerging market
 currency.
 
-# QUESTION 5: Global Balanced Index Fund Portfolio Construction
+## QUESTION 5: Global Balanced Index Fund Portfolio Construction
 
 We want to construct a global balanced index fund portfolio using a mix
 of traded global indexes.
