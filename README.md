@@ -1028,14 +1028,1018 @@ most volatility and which sectors they are found by their sizes but I
 was unsure how to do that , plus I felt my solution was way all over the
 place trying to include all code so I excluded it)
 
+### Question 3 Momentum
+
+``` r
+pacman::p_load(tidyverse, lubridate, zoo, PerformanceAnalytics, 
+               ggthemes, patchwork, broom, knitr, roll, moments, scales)
+
+# used this color pallette (from mckinsey theme)
+mck_colors <- c(
+  "#00A4B4", "#FF6B35", "#6A5ACD", "#FFD166", "#06D6A0", 
+  "#118AB2", "#EF476F", "#073B4C", "#7209B7", "#F3722C"
+)
+```
+
+## 1. Load and prepare the data
+
+``` r
+# 1. Data loading .
+fundholds <- read_rds("data/Fund_Holds.rds")
+holdrets  <- read_rds("data/Hold_Rets_Sectors.rds")
+
+#later for momentum usage
+prepare_momentum_data <- function(holdrets, fundholds) {
+
+  clean_returns <- holdrets %>%
+    rename(
+      ticker = Tickers,
+      return = Return,
+      weight = Weight,
+      group  = Group,
+      sector = Sector
+    ) %>%
+    filter(date >= as.Date("2013-01-01")) %>%
+    arrange(ticker, date) %>%
+    group_by(ticker) %>%
+    mutate(
+      last_obs    = max(date),
+      is_delisted = last_obs < max(date) - months(6),
+      return_filled = zoo::na.locf(return, maxgap = 3, na.rm = FALSE)
+    ) %>%
+    # Winsorise returns at 1st and 99th percentile per stock
+    mutate(
+      p01 = quantile(return_filled, 0.01, na.rm = TRUE),
+      p99 = quantile(return_filled, 0.99, na.rm = TRUE),
+      return_winsorized = case_when(
+        return_filled < p01 ~ p01,
+        return_filled > p99 ~ p99,
+        TRUE               ~ return_filled
+      )
+    ) %>%
+    select(-p01, -p99) %>%
+    # Make sure each stock has at least 60 observations (~5 years)
+    mutate(n_obs = sum(!is.na(return_filled))) %>%
+    filter(n_obs >= 60) %>%
+    select(-n_obs) %>%
+    ungroup()
+  
+  # Prepare fund holdings
+  clean_fund <- fundholds %>%
+    rename(
+      ticker = Tickers,
+      weight = Weight
+    ) %>%
+    arrange(ticker, date) %>%
+    group_by(date) %>%
+    mutate(
+      # Here I normalise the weights so they sum to 1 each date
+      port_weight = weight / sum(weight, na.rm = TRUE)
+    ) %>%
+    ungroup() %>%
+    select(date, ticker, port_weight) %>%
+    filter(!is.na(port_weight), port_weight > 0)
+  
+  list(clean_returns = clean_returns, clean_fund = clean_fund)
+}
+
+data_prepared  <- prepare_momentum_data(holdrets, fundholds)
+clean_returns  <- data_prepared$clean_returns
+clean_fund     <- data_prepared$clean_fund
+```
+
+## 2. Momentum signal definitions
+
+``` r
+# 2. Momentum signal functions 
+
+compute_momentum_12m1m_log <- function(returns, dates) {
+  df <- data.frame(date = dates, return = returns) %>% arrange(date)
+  
+  # Work in log space, then convert back at the end
+  df$log_return <- log(1 + df$return)
+  df$cumret_12m <- roll::roll_sum(df$log_return, width = 12, min_obs = 12)
+  df$momentum_12m1m <- dplyr::lag(df$cumret_12m, 1)
+  
+  # Convert log momentum back to simple return
+  exp(df$momentum_12m1m) - 1
+}
+
+compute_momentum_6m1m <- function(returns, dates) {
+  df <- data.frame(date = dates, return = returns) %>% arrange(date)
+  
+  df$cumret_6m     <- roll::roll_prod(1 + df$return, width = 6, min_obs = 6) - 1
+  df$momentum_6m1m <- dplyr::lag(df$cumret_6m, 1)
+  
+  df$momentum_6m1m
+}
+
+compute_volatility_scaled_momentum_log <- function(returns, dates) {
+  df <- data.frame(date = dates, return = returns) %>% arrange(date)
+  
+  df$log_return   <- log(1 + df$return)
+  df$cumret_12m   <- roll::roll_sum(df$log_return, width = 12, min_obs = 12)
+  df$rolling_vol  <- roll::roll_sd(df$log_return, width = 60, min_obs = 36)
+  df$momentum_vol_scaled <- dplyr::lag(df$cumret_12m / (df$rolling_vol + 0.001), 1)
+  
+  # I keep this in log units – I only use it for rankings, not as a return itself
+  df$momentum_vol_scaled
+}
+
+compute_fip_momentum_log <- function(returns, dates) {
+  df <- data.frame(date = dates, return = returns) %>% arrange(date)
+  
+  df$log_return   <- log(1 + df$return)
+  df$cumret_12m   <- roll::roll_sum(df$log_return, width = 12, min_obs = 12)
+  df$rolling_vol  <- roll::roll_sd(df$log_return, width = 12, min_obs = 12)
+  df$rolling_skew <- zoo::rollapply(
+    df$log_return,
+    width = 12,
+    FUN   = function(x) moments::skewness(x, na.rm = TRUE),
+    fill  = NA,
+    align = "right"
+  )
+
+  df$fip_momentum <- dplyr::lag(
+    df$cumret_12m / (df$rolling_vol + 0.001) * (1 + df$rolling_skew * 0.1),
+    1
+  )
+  
+  df$fip_momentum
+}
+
+compute_volatility_scaled_momentum <- function(returns, dates) {
+  df <- data.frame(date = dates, return = returns) %>% arrange(date)
+  
+  df$cumret_12m   <- roll::roll_prod(1 + df$return, width = 12, min_obs = 12) - 1
+  df$rolling_vol  <- roll::roll_sd(df$return, width = 60, min_obs = 36)  # ~5 years
+  df$momentum_vol_scaled <- dplyr::lag(df$cumret_12m / (df$rolling_vol + 0.001), 1)
+  
+  df$momentum_vol_scaled
+}
+```
+
+Now I actually apply the signal functions:
+
+``` r
+# Calculating momentum signals
+
+momentum_data <- clean_returns %>%
+  group_by(ticker) %>%
+  arrange(date) %>%
+  mutate(
+    momentum_12m1m      = compute_momentum_12m1m_log(return, date),
+    momentum_6m1m       = compute_momentum_6m1m(return, date),
+    momentum_fip        = compute_fip_momentum_log(return, date),
+    momentum_vol_scaled = compute_volatility_scaled_momentum(return, date)
+  ) %>%
+  ungroup() %>%
+  filter(date >= as.Date("2014-01-01"))
+```
+
+## 3. Forward returns and monthly panel
+
+``` r
+# Calculating forward returns
+
+momentum_data <- momentum_data %>%
+  group_by(ticker) %>%
+  arrange(date) %>%
+  mutate(
+    # One, three, six and twelve month forward returns
+    return_1m = dplyr::lead(return, 1),
+    return_3m = (1 + dplyr::lead(return, 1)) *
+                (1 + dplyr::lead(return, 2)) *
+                (1 + dplyr::lead(return, 3)) - 1,
+    return_6m = (1 + dplyr::lead(return, 1)) *
+                (1 + dplyr::lead(return, 2)) *
+                (1 + dplyr::lead(return, 3)) *
+                (1 + dplyr::lead(return, 4)) *
+                (1 + dplyr::lead(return, 5)) *
+                (1 + dplyr::lead(return, 6)) - 1,
+    return_12m = roll::roll_prod(1 + dplyr::lead(return, 1), width = 12, min_obs = 12) - 1
+  ) %>%
+  ungroup()
+```
+
+``` r
+# Build a monthly cross-sectional panel on month-end dates
+monthly_data <- momentum_data %>%
+  mutate(
+    year      = year(date),
+    month     = floor_date(date, "month"),
+    month_end = ceiling_date(date, "month") - days(1)
+  ) %>%
+  group_by(ticker, month) %>%
+  # Take last trading day of the month for each ticker
+  filter(date == max(date)) %>%
+  ungroup() %>%
+  filter(!is.na(momentum_12m1m))
+```
+
+------------------------------------------------------------------------
+
+## 4. Information Coefficient (IC)
+
+``` r
+# Helper for IC – I reuse this for different signals and horizons
+calculate_ic_robust <- function(data, signal_col, return_col, method = "spearman") {
+  data %>%
+    filter(!is.na(!!sym(signal_col)) & !is.na(!!sym(return_col))) %>%
+    # I trim crazy outliers (> 50% absolute) so that a few points don’t dominate
+    filter(abs(!!sym(return_col)) < 0.5) %>%
+    group_by(month) %>%
+    summarise(
+      ic       = cor(!!sym(signal_col), !!sym(return_col),
+                     method = method, use = "complete.obs"),
+      n_stocks = n(),
+      .groups  = "drop"
+    )
+}
+
+# Calculating Information Coefficients
+
+ic_results <- bind_rows(
+  # Primary 12M-1M signal vs different horizons
+  calculate_ic_robust(monthly_data, "momentum_12m1m", "return_1m") %>% 
+    mutate(signal = "12M-1M", horizon = "1M"),
+  calculate_ic_robust(monthly_data, "momentum_12m1m", "return_3m") %>% 
+    mutate(signal = "12M-1M", horizon = "3M"),
+  calculate_ic_robust(monthly_data, "momentum_12m1m", "return_6m") %>% 
+    mutate(signal = "12M-1M", horizon = "6M"),
+  # Extra signals all compared to 3M returns
+  calculate_ic_robust(monthly_data, "momentum_6m1m", "return_3m") %>% 
+    mutate(signal = "6M-1M", horizon = "3M"),
+  calculate_ic_robust(monthly_data, "momentum_fip", "return_3m") %>% 
+    mutate(signal = "FIP", horizon = "3M"),
+  calculate_ic_robust(monthly_data, "momentum_vol_scaled", "return_3m") %>% 
+    mutate(signal = "Vol-Scaled", horizon = "3M")
+)
+
+# Significance stats for the main spec: 12M-1M vs 3M forward returns
+ic_significance <- ic_results %>%
+  filter(signal == "12M-1M", horizon == "3M") %>%
+  summarise(
+    mean_ic   = mean(ic, na.rm = TRUE),
+    median_ic = median(ic, na.rm = TRUE),
+    sd_ic     = sd(ic, na.rm = TRUE),
+    t_stat    = mean_ic / (sd_ic / sqrt(n())),
+    p_value   = 2 * pt(abs(t_stat), df = n() - 1, lower.tail = FALSE),
+    hit_rate  = mean(ic > 0, na.rm = TRUE),
+    n_months  = n()
+  )
+```
+
+------------------------------------------------------------------------
+
+## 5. Signal decay
+
+``` r
+cat("\nAnalyzing signal decay...\n")
+```
+
+    ## 
+    ## Analyzing signal decay...
+
+``` r
+signal_decay <- monthly_data %>%
+  select(ticker, month, momentum_12m1m) %>%
+  group_by(ticker) %>%
+  arrange(month) %>%
+  mutate(
+    momentum_1m_ahead = dplyr::lead(momentum_12m1m, 1),
+    momentum_3m_ahead = dplyr::lead(momentum_12m1m, 3),
+    momentum_6m_ahead = dplyr::lead(momentum_12m1m, 6)
+  ) %>%
+  ungroup()
+
+decay_by_horizon <- bind_rows(
+  signal_decay %>%
+    filter(!is.na(momentum_12m1m), !is.na(momentum_1m_ahead)) %>%
+    group_by(month) %>%
+    summarise(
+      correlation = cor(momentum_12m1m, momentum_1m_ahead,
+                        method = "spearman", use = "complete.obs"),
+      .groups = "drop"
+    ) %>%
+    mutate(horizon = "1M"),
+  signal_decay %>%
+    filter(!is.na(momentum_12m1m), !is.na(momentum_3m_ahead)) %>%
+    group_by(month) %>%
+    summarise(
+      correlation = cor(momentum_12m1m, momentum_3m_ahead,
+                        method = "spearman", use = "complete.obs"),
+      .groups = "drop"
+    ) %>%
+    mutate(horizon = "3M"),
+  signal_decay %>%
+    filter(!is.na(momentum_12m1m), !is.na(momentum_6m_ahead)) %>%
+    group_by(month) %>%
+    summarise(
+      correlation = cor(momentum_12m1m, momentum_6m_ahead,
+                        method = "spearman", use = "complete.obs"),
+      .groups = "drop"
+    ) %>%
+    mutate(horizon = "6M")
+)
+```
+
+## 6. Quintile portfolios and transaction costs
+
+``` r
+# Calculating quintile portfolio performance 
+transaction_cost_bps <- 30          # 30 bps per trade
+transaction_cost     <- transaction_cost_bps / 10000
+
+calculate_quintile_performance <- function(data, signal_col, return_col,
+                                           include_costs = TRUE) {
+  
+  # Rank into quintiles each month
+  quintile_data <- data %>%
+    filter(!is.na(!!sym(signal_col)), !is.na(!!sym(return_col))) %>%
+    group_by(month) %>%
+    mutate(quintile = ntile(!!sym(signal_col), 5)) %>%
+    ungroup()
+  
+  # Estimate turnover if we include costs
+  if (include_costs) {
+    quintile_data <- quintile_data %>%
+      group_by(ticker) %>%
+      arrange(month) %>%
+      mutate(
+        prev_quintile  = dplyr::lag(quintile),
+        turnover_flag  = quintile != prev_quintile | is.na(prev_quintile)
+      ) %>%
+      ungroup()
+  }
+  
+  # Cross-sectional portfolio returns per quintile per month
+  portfolio_returns <- quintile_data %>%
+    group_by(month, quintile) %>%
+    summarise(
+      gross_return = mean(!!sym(return_col), na.rm = TRUE),
+      turnover_rate = if (include_costs) mean(turnover_flag, na.rm = TRUE) else 0,
+      n_stocks      = n(),
+      .groups       = "drop"
+    ) %>%
+    mutate(
+      transaction_costs = turnover_rate * transaction_cost,
+      net_return        = gross_return - transaction_costs
+    )
+  
+  # Summary stats by quintile
+  portfolio_returns %>%
+    group_by(quintile) %>%
+    summarise(
+      gross_annual_return = mean(gross_return, na.rm = TRUE) * 12,
+      net_annual_return   = mean(net_return,   na.rm = TRUE) * 12,
+      annual_vol          = sd(net_return,     na.rm = TRUE) * sqrt(12),
+      sharpe              = net_annual_return / annual_vol,
+      avg_turnover        = mean(turnover_rate, na.rm = TRUE),
+      avg_stocks          = mean(n_stocks,      na.rm = TRUE),
+      max_drawdown        = min(net_return,     na.rm = TRUE),
+      .groups             = "drop"
+    )
+}
+
+quintile_performance <- calculate_quintile_performance(
+  monthly_data,
+  signal_col = "momentum_12m1m",
+  return_col = "return_3m",
+  include_costs = TRUE
+)
+
+cat("\nQuintile Performance Summary:\n")
+```
+
+    ## 
+    ## Quintile Performance Summary:
+
+``` r
+print(knitr::kable(quintile_performance, digits = 4))
+```
+
+    ## 
+    ## 
+    ## | quintile| gross_annual_return| net_annual_return| annual_vol|  sharpe| avg_turnover| avg_stocks| max_drawdown|
+    ## |--------:|-------------------:|-----------------:|----------:|-------:|------------:|----------:|------------:|
+    ## |        1|              0.0525|            0.0253|     0.0869|  0.2911|       0.7570|    28.9453|      -0.0549|
+    ## |        2|              0.0405|            0.0117|     0.0642|  0.1816|       0.8005|    28.7422|      -0.0355|
+    ## |        3|              0.0159|           -0.0123|     0.0669| -0.1834|       0.7831|    28.5312|      -0.0354|
+    ## |        4|              0.0181|           -0.0106|     0.0611| -0.1728|       0.7965|    28.2734|      -0.0381|
+    ## |        5|              0.0417|            0.0133|     0.0745|  0.1788|       0.7880|    28.1328|      -0.0448|
+
+``` r
+# Long-short Q5 minus Q1 annualised return
+long_short_return <- quintile_performance$net_annual_return[5] -
+                     quintile_performance$net_annual_return[1]
+```
+
+## 7. Crash risk and sector effects
+
+``` r
+# Analyzing momentum crash risk
+
+crash_analysis <- monthly_data %>%
+  filter(!is.na(momentum_12m1m), !is.na(return_3m)) %>%
+  group_by(month) %>%
+  mutate(
+    quintile     = ntile(momentum_12m1m, 5),
+    market_crash = quantile(return_3m, 0.05)  # 5th percentile
+  ) %>%
+  ungroup() %>%
+  group_by(quintile) %>%
+  summarise(
+    avg_return       = mean(return_3m, na.rm = TRUE) * 12,
+    crash_return_5pct = quantile(return_3m, 0.05, na.rm = TRUE),
+    max_drawdown     = min(return_3m, na.rm = TRUE),
+    skewness         = moments::skewness(return_3m, na.rm = TRUE),
+    kurtosis         = moments::kurtosis(return_3m, na.rm = TRUE),
+    .groups          = "drop"
+  )
+
+print(knitr::kable(crash_analysis, digits = 4))
+```
+
+    ## 
+    ## 
+    ## | quintile| avg_return| crash_return_5pct| max_drawdown| skewness| kurtosis|
+    ## |--------:|----------:|-----------------:|------------:|--------:|--------:|
+    ## |        1|     0.0528|           -0.0692|      -0.3175|   5.5159| 100.2955|
+    ## |        2|     0.0400|           -0.0526|      -0.2605|   6.1997| 130.4349|
+    ## |        3|     0.0165|           -0.0527|      -0.6635|  -0.4950|  32.7078|
+    ## |        4|     0.0181|           -0.0541|      -0.1882|   1.1555|  13.9994|
+    ## |        5|     0.0429|           -0.0632|      -0.4342|   3.0978|  46.6615|
+
+``` r
+# Sector-level momentum IC and sector-neutral version of the signal
+if ("sector" %in% names(monthly_data)) {
+  cat("\nAnalyzing sector effects...\n")
+  
+  sector_momentum <- monthly_data %>%
+    filter(!is.na(momentum_12m1m), !is.na(return_3m)) %>%
+    group_by(month, sector) %>%
+    summarise(
+      ic           = cor(momentum_12m1m, return_3m,
+                         method = "spearman", use = "complete.obs"),
+      avg_momentum = mean(momentum_12m1m, na.rm = TRUE),
+      avg_return   = mean(return_3m,      na.rm = TRUE),
+      n_stocks     = n(),
+      .groups      = "drop"
+    ) %>%
+    group_by(sector) %>%
+    summarise(
+      mean_ic      = mean(ic,            na.rm = TRUE),
+      ic_hit_rate  = mean(ic > 0,        na.rm = TRUE),
+      avg_momentum = mean(avg_momentum,  na.rm = TRUE),
+      avg_return   = mean(avg_return,    na.rm = TRUE) * 12,
+      avg_stocks   = mean(n_stocks,      na.rm = TRUE),
+      .groups      = "drop"
+    ) %>%
+    arrange(desc(mean_ic))
+  
+#Sector Momentum IC
+  print(knitr::kable(sector_momentum, digits = 4))
+  
+  monthly_data <- monthly_data %>%
+    group_by(month, sector) %>%
+    mutate(
+      momentum_sector_neutral = momentum_12m1m -
+        mean(momentum_12m1m, na.rm = TRUE)
+    ) %>%
+    ungroup()
+}
+```
+
+    ## 
+    ## Analyzing sector effects...
+    ## 
+    ## 
+    ## |sector      | mean_ic| ic_hit_rate| avg_momentum| avg_return| avg_stocks|
+    ## |:-----------|-------:|-----------:|------------:|----------:|----------:|
+    ## |Resources   |  0.0275|      0.5547|       0.0052|     0.0930|    24.8672|
+    ## |Industrials | -0.0221|      0.4375|       0.0028|     0.0225|    66.5156|
+    ## |Property    | -0.0274|      0.4688|       0.0016|     0.0318|    23.5312|
+    ## |Financials  | -0.0505|      0.4375|       0.0075|     0.0104|    27.7109|
+
+## 8. Market regimes
+
+``` r
+#bDetecting market regimes
+
+market_regime <- monthly_data %>%
+  filter(!is.na(momentum_12m1m), !is.na(return_3m)) %>%
+  group_by(month) %>%
+  summarise(
+    market_return    = mean(return_3m,      na.rm = TRUE),
+    return_dispersion = sd(return_3m,       na.rm = TRUE),
+    momentum_spread  = mean(return_3m[ntile(momentum_12m1m, 5) == 5], na.rm = TRUE) -
+                       mean(return_3m[ntile(momentum_12m1m, 5) == 1], na.rm = TRUE),
+    ic               = cor(momentum_12m1m, return_3m,
+                           method = "spearman", use = "complete.obs"),
+    .groups          = "drop"
+  ) %>%
+  mutate(
+    regime = case_when(
+      momentum_spread > quantile(momentum_spread, 0.75, na.rm = TRUE) ~ "Strong Momentum",
+      momentum_spread < quantile(momentum_spread, 0.25, na.rm = TRUE) ~ "Reversal",
+      TRUE                                                             ~ "Neutral"
+    ),
+    rolling_spread_6m = zoo::rollmean(momentum_spread, 6, fill = NA, align = "right"),
+    rolling_ic_6m     = zoo::rollmean(ic,             6, fill = NA, align = "right")
+  )
+
+regime_summary <- market_regime %>%
+  group_by(regime) %>%
+  summarise(
+    n_months          = n(),
+    avg_spread        = mean(momentum_spread, na.rm = TRUE),
+    avg_ic            = mean(ic,              na.rm = TRUE),
+    avg_market_return = mean(market_return,   na.rm = TRUE) * 12,
+    .groups           = "drop"
+  )
+
+
+print(knitr::kable(regime_summary, digits = 4))
+```
+
+    ## 
+    ## 
+    ## |regime          | n_months| avg_spread|  avg_ic| avg_market_return|
+    ## |:---------------|--------:|----------:|-------:|-----------------:|
+    ## |Neutral         |       64|    -0.0006| -0.0141|            0.0262|
+    ## |Reversal        |       32|    -0.0239| -0.1651|            0.0622|
+    ## |Strong Momentum |       32|     0.0214|  0.1397|            0.0208|
+
+## 9. Fund vs momentum benchmark
+
+``` r
+# Analyzing fund performance
+
+# 9.1 Fund returns from holdings
+fund_returns <- clean_fund %>%
+  inner_join(
+    clean_returns %>% select(ticker, date, return),
+    by = c("ticker", "date")
+  ) %>%
+  group_by(date) %>%
+  summarise(
+    fund_return = sum(port_weight * return, na.rm = TRUE),
+    n_holdings  = n(),
+    .groups     = "drop"
+  ) %>%
+  mutate(
+    # If for some reason we get NA, I just treat it as 0 here
+    fund_return = ifelse(is.na(fund_return), 0, fund_return)
+  )
+
+# 9.2 Fund momentum exposure (weighted average signal)
+fund_momentum_exposure <- clean_fund %>%
+  mutate(month = floor_date(date, "month")) %>%
+  inner_join(
+    monthly_data %>% select(ticker, month, momentum_12m1m, return),
+    by = c("ticker", "month")
+  ) %>%
+  group_by(date) %>%
+  summarise(
+    fund_momentum_exposure = weighted.mean(momentum_12m1m, port_weight, na.rm = TRUE),
+    exposure_sd            = sqrt(sum(port_weight^2 * momentum_12m1m^2, na.rm = TRUE)),
+    .groups                = "drop"
+  ) %>%
+  left_join(fund_returns, by = "date")
+
+# 9.3 Momentum benchmark: top quintile of 12M1M
+momentum_benchmark <- monthly_data %>%
+  mutate(month = as.Date(month)) %>%
+  group_by(month) %>%
+  mutate(quintile = ntile(momentum_12m1m, 5)) %>%
+  filter(quintile == 5) %>%
+  group_by(month) %>%
+  summarise(
+    momentum_benchmark_return = mean(return, na.rm = TRUE),
+    n_stocks                  = n(),
+    .groups                   = "drop"
+  ) %>%
+  mutate(
+    momentum_benchmark_return = ifelse(is.na(momentum_benchmark_return), 0,
+                                       momentum_benchmark_return)
+  )
+
+# 9.4 Combine fund and benchmark
+fund_vs_benchmark <- fund_momentum_exposure %>%
+  mutate(month = floor_date(date, "month")) %>%
+  inner_join(momentum_benchmark, by = "month") %>%
+  mutate(
+    fund_cumulative       = cumprod(1 + fund_return),
+    benchmark_cumulative  = cumprod(1 + momentum_benchmark_return),
+    active_return         = fund_return - momentum_benchmark_return
+  )
+
+# 9.5 Annual momentum capture by year
+fund_momentum_capture <- fund_vs_benchmark %>%
+  mutate(year = year(date)) %>%
+  group_by(year) %>%
+  summarise(
+    fund_return = ifelse(all(is.na(fund_return)), NA,
+                         prod(1 + fund_return, na.rm = TRUE) - 1),
+    momentum_benchmark_return = ifelse(all(is.na(momentum_benchmark_return)), NA,
+                                       prod(1 + momentum_benchmark_return, na.rm = TRUE) - 1),
+    momentum_capture = ifelse(
+      is.na(fund_return) | is.na(momentum_benchmark_return) |
+        momentum_benchmark_return == 0,
+      NA,
+      fund_return / momentum_benchmark_return
+    ),
+    tracking_error = sd(active_return, na.rm = TRUE) * sqrt(12),
+    information_ratio = ifelse(
+      is.na(tracking_error) | tracking_error == 0,
+      NA,
+      mean(active_return, na.rm = TRUE) / tracking_error * sqrt(12)
+    ),
+    .groups = "drop"
+  )
+
+
+print(knitr::kable(fund_momentum_capture, digits = 4))
+```
+
+    ## 
+    ## 
+    ## | year| fund_return| momentum_benchmark_return| momentum_capture| tracking_error| information_ratio|
+    ## |----:|-----------:|-------------------------:|----------------:|--------------:|-----------------:|
+    ## | 2019|     -0.0142|                   -0.0056|           2.5297|         0.0195|           -1.4726|
+    ## | 2020|     -0.0230|                   -0.1357|           0.1693|         0.0309|            0.2818|
+    ## | 2021|      0.0142|                   -0.0050|          -2.8310|         0.0276|            0.0832|
+    ## | 2022|      0.0716|                    0.0482|           1.4855|         0.0246|            0.5779|
+    ## | 2023|      0.0053|                   -0.0068|          -0.7777|         0.0213|            0.3240|
+    ## | 2024|      0.0085|                    0.0176|           0.4862|         0.0193|            0.1740|
+    ## | 2025|     -0.0231|                   -0.0230|           1.0039|         0.0285|           -0.0031|
+
+``` r
+# 10.1 Rolling IC time series
+library(fmxdat)
+p1 <- ic_results %>%
+  filter(signal == "12M-1M", horizon == "3M") %>%
+  mutate(
+    rolling_ic_6m  = zoo::rollmean(ic, 6,  fill = NA, align = "right"),
+    rolling_ic_12m = zoo::rollmean(ic, 12, fill = NA, align = "right")
+  ) %>%
+  ggplot(aes(x = month)) +
+  geom_line(aes(y = ic), color = "gray60", alpha = 0.5) +
+  geom_line(aes(y = rolling_ic_6m,  color = "6-Month"),  size = 1) +
+  geom_line(aes(y = rolling_ic_12m, color = "12-Month"), size = 1.2) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  scale_color_manual(values = c("6-Month" = mck_colors[1],
+                                "12-Month" = mck_colors[2])) +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  labs(
+    title    = "Momentum Strategy Predictive Power Over Time",
+    subtitle = "12M-1M momentum vs 3M forward returns",
+    x        = "Date",
+    y        = "Information Coefficient",
+    color    = "Rolling Window"
+  ) +
+  theme_fmx()
+
+# 10.2 Mean IC by signal type
+p2 <- ic_results %>%
+  filter(horizon == "3M") %>%
+  group_by(signal) %>%
+  summarise(
+    mean_ic = mean(ic, na.rm = TRUE),
+    se_ic   = sd(ic,   na.rm = TRUE) / sqrt(n()),
+    .groups = "drop"
+  ) %>%
+  ggplot(aes(x = reorder(signal, mean_ic), y = mean_ic, fill = signal)) +
+  geom_col(alpha = 0.8) +
+  geom_errorbar(
+    aes(ymin = mean_ic - 1.96 * se_ic, ymax = mean_ic + 1.96 * se_ic),
+    width = 0.2, alpha = 0.7
+  ) +
+  scale_fill_manual(values = mck_colors) +
+  scale_y_continuous(labels = percent_format(accuracy = 0.1)) +
+  coord_flip() +
+  labs(
+    title    = "Mean IC by Momentum Signal Type",
+    subtitle = "3-Month Forward Returns with 95% CIs",
+    x        = "Signal",
+    y        = "Mean Information Coefficient"
+  ) +
+  theme(legend.position = "none")
+
+# 10.3 Signal persistence
+p3 <- decay_by_horizon %>%
+  group_by(horizon) %>%
+  mutate(rolling_corr = zoo::rollmean(correlation, 6, fill = NA, align = "right")) %>%
+  ggplot(aes(x = month, y = rolling_corr, color = horizon)) +
+  geom_line(size = 1.2) +
+  geom_hline(yintercept = 0.5, linetype = "dashed", color = "red", alpha = 0.5) +
+  scale_color_manual(values = mck_colors[1:3]) +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  labs(
+    title    = "Momentum Signal Persistence",
+    subtitle = "Spearman autocorrelation of 12M-1M momentum (6M rolling)",
+    x        = "Date",
+    y        = "Signal Autocorrelation",
+    color    = "Horizon"
+  ) +
+  theme_fmx()
+
+# actually show them in the knitted doc
+p1
+```
+
+![](README_files/figure-gfm/visuals-1.png)<!-- -->
+
+``` r
+p2
+```
+
+![](README_files/figure-gfm/visuals-2.png)<!-- -->
+
+``` r
+p3
+```
+
+![](README_files/figure-gfm/visuals-3.png)<!-- -->
+
+``` r
+# 10.4 Cumulative performance: Q1, Q3, Q5 vs fund and benchmark
+p4_data <- monthly_data %>%
+  group_by(month) %>%
+  mutate(quintile = ntile(momentum_12m1m, 5)) %>%
+  group_by(month, quintile) %>%
+  summarise(
+    portfolio_return = mean(return_3m, na.rm = TRUE),
+    .groups          = "drop"
+  ) %>%
+  group_by(quintile) %>%
+  mutate(cumulative_return = cumprod(1 + portfolio_return)) %>%
+  ungroup() %>%
+  filter(quintile %in% c(1, 3, 5))
+
+p4_fund <- fund_vs_benchmark %>%
+  select(month = date, fund_cumulative, benchmark_cumulative) %>%
+  pivot_longer(
+    cols      = c(fund_cumulative, benchmark_cumulative),
+    names_to  = "quintile",
+    values_to = "cumulative_return"
+  ) %>%
+  mutate(
+    quintile = ifelse(quintile == "fund_cumulative", "Fund",
+                      "Top Quintile Benchmark")
+  )
+
+p4 <- bind_rows(
+  p4_data %>% mutate(quintile = paste0("Q", quintile)),
+  p4_fund
+) %>%
+  ggplot(aes(x = month, y = cumulative_return, color = quintile, linetype = quintile)) +
+  geom_line(size = 1.2) +
+  scale_color_manual(values = c(
+    "Q1"                    = mck_colors[7],
+    "Q3"                    = mck_colors[8],
+    "Q5"                    = mck_colors[1],
+    "Fund"                  = mck_colors[2],
+    "Top Quintile Benchmark" = mck_colors[3]
+  )) +
+  scale_linetype_manual(values = c(
+    "Q1"                    = "solid",
+    "Q3"                    = "dotted",
+    "Q5"                    = "solid",
+    "Fund"                  = "solid",
+    "Top Quintile Benchmark" = "dashed"
+  )) +
+  scale_y_continuous(labels = number_format(accuracy = 0.1)) +
+  labs(
+    title    = "Cumulative Performance: Momentum Quintiles vs Fund",
+    subtitle = "Q1 (Low), Q3 (Mid), Q5 (High) vs Fund and Top Quintile Benchmark",
+    x        = "Date",
+    y        = "Cumulative Return (Index)",
+    color    = "Strategy",
+    linetype = "Strategy"
+  ) +
+  theme_fmx()
+
+p4
+```
+
+![](README_files/figure-gfm/visuals-performance-1.png)<!-- -->
+
+``` r
+# 10.5 Quintile performance heatmap
+p5_data <- monthly_data %>%
+  mutate(year = year(month)) %>%
+  filter(!is.na(momentum_12m1m), !is.na(return_3m)) %>%
+  group_by(year, month) %>%
+  mutate(quintile = ntile(momentum_12m1m, 5)) %>%
+  group_by(year, quintile) %>%
+  summarise(
+    annual_return = mean(return_3m, na.rm = TRUE) * 12,
+    .groups       = "drop"
+  )
+
+p5 <- p5_data %>%
+  ggplot(aes(x = factor(quintile), y = factor(year), fill = annual_return)) +
+  geom_tile(color = "white", size = 1) +
+  geom_text(aes(label = percent(annual_return, accuracy = 1)),
+            color = "white", fontface = "bold", size = 3.5) +
+  scale_fill_gradient2(
+    low  = mck_colors[7],
+    mid  = "gray90",
+    high = mck_colors[1],
+    midpoint = 0,
+    labels   = percent_format()
+  ) +
+  labs(
+    title    = "Annual Returns by Momentum Quintile",
+    subtitle = "3-Month Forward Returns | Q1 (Low) to Q5 (High)",
+    x        = "Momentum Quintile",
+    y        = "Year",
+    fill     = "Annual Return"
+  ) +
+  theme_fmx() +
+  theme(panel.grid = element_blank())
+
+p5
+```
+
+![](README_files/figure-gfm/visuals-heatmaps-and-more-1.png)<!-- -->
+
+``` r
+# 10.6 Fund momentum exposure
+p6 <- fund_momentum_exposure %>%
+  mutate(rolling_exposure = zoo::rollmean(
+    fund_momentum_exposure,
+    6,
+    fill  = NA,
+    align = "right"
+  )) %>%
+  ggplot(aes(x = date)) +
+  geom_line(aes(y = fund_momentum_exposure), color = "gray60", alpha = 0.4) +
+  geom_line(aes(y = rolling_exposure),       color = mck_colors[4], size = 1.2) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  geom_smooth(aes(y = rolling_exposure), method = "loess", span = 0.3,
+              se = TRUE, color = mck_colors[5], fill = mck_colors[5], alpha = 0.2) +
+  scale_y_continuous(labels = percent_format(accuracy = 0.1)) +
+  labs(
+    title    = "Fund Momentum Exposure (6-Month Rolling)",
+    subtitle = "Weighted average 12M-1M momentum signal of fund holdings",
+    x        = "Date",
+    y        = "Momentum Exposure"
+  ) +
+  theme_fmx()
+
+# 10.7 Market regimes
+p7 <- market_regime %>%
+  ggplot(aes(x = month)) +
+  geom_col(aes(y = momentum_spread, fill = regime), alpha = 0.7) +
+  geom_line(aes(y = rolling_spread_6m), color = "black", size = 1,
+            linetype = "dashed") +
+  geom_hline(yintercept = 0, linetype = "solid", color = "red") +
+  scale_fill_manual(values = c(
+    "Strong Momentum" = mck_colors[1],
+    "Neutral"         = mck_colors[4],
+    "Reversal"        = mck_colors[7]
+  )) +
+  scale_y_continuous(labels = percent_format()) +
+  labs(
+    title    = "Market Regime: Momentum Spread (Q5 - Q1)",
+    subtitle = "Positive = momentum working, Negative = momentum reversal",
+    x        = "Date",
+    y        = "Momentum Spread",
+    fill     = "Regime"
+  ) +
+  theme_fmx()
+
+p6
+```
+
+![](README_files/figure-gfm/visuals-fund-and-regimes-1.png)<!-- -->
+
+``` r
+p7
+```
+
+![](README_files/figure-gfm/visuals-fund-and-regimes-2.png)<!-- -->
+
+``` r
+# 10.8 Crash risk plot
+p8 <- crash_analysis %>%
+  select(quintile, avg_return, crash_return_5pct, max_drawdown) %>%
+  pivot_longer(cols = -quintile, names_to = "metric", values_to = "value") %>%
+  mutate(metric = case_when(
+    metric == "avg_return"       ~ "Average Return",
+    metric == "crash_return_5pct" ~ "5th Percentile",
+    metric == "max_drawdown"     ~ "Max Drawdown"
+  )) %>%
+  ggplot(aes(x = factor(quintile), y = value, fill = metric)) +
+  geom_col(position = "dodge", alpha = 0.8) +
+  scale_fill_manual(values = mck_colors[c(1, 2, 7)]) +
+  scale_y_continuous(labels = percent_format()) +
+  labs(
+    title    = "Return Distribution by Momentum Quintile",
+    subtitle = "Average, tail risk and max drawdown",
+    x        = "Momentum Quintile",
+    y        = "Return",
+    fill     = "Metric"
+  ) +
+  theme_fmx()
+
+# 10.9 Fund vs benchmark tracking by year
+p9 <- fund_vs_benchmark %>%
+  mutate(year = year(date)) %>%
+  group_by(year) %>%
+  summarise(
+    fund_return      = prod(1 + fund_return)             - 1,
+    benchmark_return = prod(1 + momentum_benchmark_return) - 1,
+    .groups          = "drop"
+  ) %>%
+  pivot_longer(cols = c(fund_return, benchmark_return),
+               names_to = "portfolio", values_to = "return") %>%
+  mutate(
+    portfolio = ifelse(portfolio == "fund_return", "Fund", "Momentum Benchmark")
+  ) %>%
+  ggplot(aes(x = factor(year), y = return, fill = portfolio)) +
+  geom_col(position = "dodge", alpha = 0.8) +
+  scale_fill_manual(values = mck_colors[c(2, 3)]) +
+  scale_y_continuous(labels = percent_format()) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(
+    title    = "Annual Returns: Fund vs Momentum Benchmark",
+    subtitle = "Top quintile 12M-1M momentum as benchmark",
+    x        = "Year",
+    y        = "Annual Return",
+    fill     = "Portfolio"
+  ) +
+  theme_fmx() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+p8
+```
+
+![](README_files/figure-gfm/visuals-crash-and-tracking-1.png)<!-- -->
+
+``` r
+p9
+```
+
+![](README_files/figure-gfm/visuals-crash-and-tracking-2.png)<!-- -->
+
+``` r
+# 10.10 Sector IC heatmap (if we have sector_momentum)
+if ("sector" %in% names(monthly_data) && exists("sector_momentum")) {
+  p10_data <- monthly_data %>%
+    filter(!is.na(momentum_12m1m), !is.na(return_3m), !is.na(sector)) %>%
+    mutate(year = year(month)) %>%
+    group_by(year, sector) %>%
+    summarise(
+      ic      = cor(momentum_12m1m, return_3m,
+                    method = "spearman", use = "complete.obs"),
+      .groups = "drop"
+    )
+  
+  p10 <- p10_data %>%
+    ggplot(aes(x = factor(year), y = sector, fill = ic)) +
+      geom_tile(color = "white", size = 1) +
+      geom_text(aes(label = sprintf("%.2f", ic)), color = "white", size = 3) +
+      scale_fill_gradient2(
+        low  = mck_colors[7],
+        mid  = "gray90",
+        high = mck_colors[1],
+        midpoint = 0,
+        labels   = percent_format()
+      ) +
+      labs(
+        title    = "Sector Momentum IC by Year",
+        subtitle = "Spearman correlation: 12M-1M momentum vs 3M forward returns",
+        x        = "Year",
+        y        = "Sector",
+        fill     = "IC"
+      ) +
+      theme_fmx() +
+      theme(
+        panel.grid  = element_blank(),
+        axis.text.x = element_text(angle = 45, hjust = 1)
+      )
+  
+  p10
+}
+```
+
+![](README_files/figure-gfm/visuals-sector-heatmap-1.png)<!-- -->
+
 ### Question 4: Volatility and GARCH estimates
 
 We are evaluating whether the South African Rand (ZAR) has been among
 the most volatile currencies in recent years, which requires comparing
-its behavior to other currencies.And if  hiistorically, the ZAR has performed
+its behavior to other currencies. Historically, the ZAR tends to perform
 well during periods when G10 currency carry trades are favorable and
-when currency valuations are relatively cheap—these .Lastly if  the ZAR often benefits during
-times of Dollar strength.
+when currency valuations are relatively cheap—these can be analyzed
+separately and jointly. Additionally, the ZAR often benefits during
+times of Dollar strength, reflecting global risk-on sentiment. You have
+full discretion in choosing how to measure volatility, which currencies
+to compare, and how to structure your analysis.
 
 #### Libraries and data
 
@@ -1415,7 +2419,7 @@ garchfit1
     ## 4    50     56.46       0.2162
     ## 
     ## 
-    ## Elapsed time : 0.1779878
+    ## Elapsed time : 0.1984749
 
 ``` r
 # Extract coefficient table 
@@ -2106,7 +3110,7 @@ chart.StackedBar(
 )
 ```
 
-![](README_files/figure-gfm/unnamed-chunk-10-1.png)<!-- -->
+![](README_files/figure-gfm/unnamed-chunk-11-1.png)<!-- -->
 
 ## 6. CLUSTERING ANALYSIS FOR COMOVEMENT (prac 5 )
 
@@ -2141,4 +3145,4 @@ plot(hc,
      cex = 0.7)  # Smaller text for better fit
 ```
 
-![](README_files/figure-gfm/unnamed-chunk-11-1.png)<!-- -->
+![](README_files/figure-gfm/unnamed-chunk-12-1.png)<!-- -->

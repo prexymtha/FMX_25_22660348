@@ -335,4 +335,3 @@ create_quintile_portfolios <- function(data) {
 }
 ```
 
-This completes the extraction of all relevant code for Questions 1, 2, and 3. Each section includes the exact code from the practicals with all libraries, packages, comments, and graph formats preserved as requested.
