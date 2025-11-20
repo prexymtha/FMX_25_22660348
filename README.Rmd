@@ -34,7 +34,7 @@ I struggled with this question....
 We can compute the rolling 3-year beta for each active manager and the ABC Fund against the benchmark.Then, we can create a scatterplot of returns vs. risk (beta) and overlay boxplots to show the distribution of betas for peers and highlight ABC Fund.
 
 
-To see how much the fund differs from the rest of the industry in terms of what drives the return .We can perform a factor analysis or compare the R-squared from a market model to see how much of the returns are explained by the market.
+To see how much the fund differs from the rest of the industry in terms of what drives the return .We can perform a factor analysis or compare the R-squared from a market model to see how much of the returns are explained by the market ( we use R-squared).
 
 
 Assess relative performance over time We can plot the cumulative returns of ABC Fund, peers, and the benchmark.
@@ -45,12 +45,7 @@ Since we have a benchmark , ABC fund industry peer we can't analyse all individu
 
 
 
-We will be using analysis data to continue with our questions 
-
-
-
-
-We will do other interesting things (the above tables answer how much we differe from the rest of the industry)
+We will be using analysis data to continue with our questions .We will do other interesting things (the above tables answer how much we differe from the rest of the industry)
 
 
 
@@ -626,14 +621,23 @@ finplot(
 ```
 
 
-
 let's do this : ## Or check out this risk-return scatter for several stocks since 2010...
-chart.RiskReturnScatter(R=xts.data.dailyreturns['2003-01-01/'][,c("AGL", "AMS", "ANG", "AOD
+chart.RiskReturnScatter(R=xts.data.dailyreturns['2003-01-01/'][,c("AGL", "AMS", "ANG", "AOD.Statistics Table (I want to do a replicate from bonus practical 2 Financial Statistics I am having issues)
 
-# Table (I want to do a replicate from bonus practical 2 Financial Statistics I am having issues)
+```{r risk-return-scatter}
+# 9. Risk–return scatter for ABC, benchmark and peer average ----
+
+PerformanceAnalytics::chart.RiskReturnScatter(
+  R    = returns_xts,
+  main = "Risk–return scatter: ABC Fund vs peer average vs benchmark"
+)
+
+# Statistics table (replicating style of bonus practical 2)
+PerformanceAnalytics::table.Stats(returns_xts)
+```
 
 
-Market dispersion
+Market dispersion (still to complete )
 
 
 ### Question 2
@@ -2965,6 +2969,5 @@ plot(hc,
      sub = "",
      cex = 0.7)  # Smaller text for better fit
 ```
-
 
 

@@ -10,6 +10,8 @@ Repo: <https://github.com/prexymtha/FMX_25_22660348>
 
 ### Question 1
 
+My git is updating two files at once.
+
 I struggled with this question….
 
 We can compute the rolling 3-year beta for each active manager and the
@@ -20,7 +22,7 @@ betas for peers and highlight ABC Fund.
 To see how much the fund differs from the rest of the industry in terms
 of what drives the return .We can perform a factor analysis or compare
 the R-squared from a market model to see how much of the returns are
-explained by the market.
+explained by the market ( we use R-squared).
 
 Assess relative performance over time We can plot the cumulative returns
 of ABC Fund, peers, and the benchmark.
@@ -33,10 +35,9 @@ Since we have a benchmark , ABC fund industry peer we can’t analyse all
 individual industry peers - we will calculate the mean or average of the
 peers
 
-We will be using analysis data to continue with our questions
-
-We will do other interesting things (the above tables answer how much we
-differe from the rest of the industry)
+We will be using analysis data to continue with our questions .We will
+do other interesting things (the above tables answer how much we differe
+from the rest of the industry)
 
 ``` r
 # Q1: ABC Fund vs Benchmark and Peers – 
@@ -703,11 +704,44 @@ finplot(
 let’s do this : \## Or check out this risk-return scatter for several
 stocks since 2010…
 chart.RiskReturnScatter(R=xts.data.dailyreturns\[‘2003-01-01/’\]\[,c(“AGL”,
-“AMS”, “ANG”, “AOD
+“AMS”, “ANG”, “AOD.Statistics Table (I want to do a replicate from bonus
+practical 2 Financial Statistics I am having issues)
 
-# Table (I want to do a replicate from bonus practical 2 Financial Statistics I am having issues)
+``` r
+# 9. Risk–return scatter for ABC, benchmark and peer average ----
 
-Market dispersion
+PerformanceAnalytics::chart.RiskReturnScatter(
+  R    = returns_xts,
+  main = "Risk–return scatter: ABC Fund vs peer average vs benchmark"
+)
+```
+
+![](README_files/figure-gfm/risk-return-scatter-1.png)<!-- -->
+
+``` r
+# Statistics table (replicating style of bonus practical 2)
+PerformanceAnalytics::table.Stats(returns_xts)
+```
+
+    ##                 Benchmark ABC_Fund Peer_Average
+    ## Observations     160.0000 160.0000     160.0000
+    ## NAs                0.0000   0.0000       0.0000
+    ## Minimum           -0.1669  -0.0715      -0.1486
+    ## Quartile 1        -0.0150  -0.0040      -0.0130
+    ## Median             0.0141   0.0123       0.0127
+    ## Arithmetic Mean    0.0099   0.0117       0.0084
+    ## Geometric Mean     0.0091   0.0112       0.0079
+    ## Quartile 3         0.0321   0.0290       0.0268
+    ## Maximum            0.1418   0.1509       0.1303
+    ## SE Mean            0.0030   0.0024       0.0026
+    ## LCL Mean (0.95)    0.0039   0.0069       0.0033
+    ## UCL Mean (0.95)    0.0158   0.0165       0.0135
+    ## Variance           0.0014   0.0009       0.0011
+    ## Stdev              0.0379   0.0308       0.0329
+    ## Skewness          -0.4396   0.2528      -0.4085
+    ## Kurtosis           2.8386   2.0787       3.3731
+
+Market dispersion (still to complete )
 
 ### Question 2
 
@@ -2892,7 +2926,7 @@ garchfit1
     ## 4    50     56.46       0.2162
     ## 
     ## 
-    ## Elapsed time : 0.2514789
+    ## Elapsed time : 0.153296
 
 ``` r
 # Extract coefficient table 
