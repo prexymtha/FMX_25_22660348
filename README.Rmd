@@ -1347,7 +1347,7 @@ The GJR GARCH model indicates that ZAR volatility responds more strongly to posi
 
 
 
-# QUESTION 5: Global Balanced Index Fund Portfolio Construction
+## QUESTION 5: Global Balanced Index Fund Portfolio Construction
 
 We want to construct a global balanced index fund portfolio using a mix of traded global indexes.
 
