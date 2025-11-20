@@ -1032,72 +1032,64 @@ place trying to include all code so I excluded it)
 
 ### Question 4: Volatility and GARCH estimates
 
-- We are assessing whether the South African Rand (ZAR) has been one of
-  the most volatile currency over the past few years.(since it says one
-  of the most we assess it relative to other currencies)
+We are evaluating whether the South African Rand (ZAR) has been among
+the most volatile currencies in recent years, which requires comparing
+its behavior to other currencies. Historically, the ZAR tends to perform
+well during periods when G10 currency carry trades are favorable and
+when currency valuations are relatively cheap—these can be analyzed
+separately and jointly. Additionally, the ZAR often benefits during
+times of Dollar strength, reflecting global risk-on sentiment. You have
+full discretion in choosing how to measure volatility, which currencies
+to compare, and how to structure your analysis.
 
-- ZAR has generally performed well during periods where the G10 currency
-  carry trades have been favourable and currency valuations cheap ( we
-  can split this for two and then do the joint )
-
-- Globally, it has been one of the currencies that most benefit during
-  periods where the Dollar is comparatively strong, indicating a risk-on
-  sentiment
-
-- Use your discretion on what you use to measure volatility, which
-  currencies you compare and how you arrive at your conclusions. Be
-  creative in using tables, graphs, stratification and statistics to
-  argue your points.
-
-- Use your discretion on what you use to measure volatility, which
-  currencies you compare and how you arrive at your conclusions. Be
-  creative in using tables, graphs, stratification and statistics to
-  argue your points.
-
-### Q4: Volatility and GARCH estimates for ZAR
-
-#### 0. Libraries and data
+#### Libraries and data
 
 ``` r
+# Load all required packages 
 pacman::p_load(
-  tidyverse,
-  devtools,
-  rugarch,
-  rmgarch,
-  forecast,
-  tbl2xts,
-  lubridate,
-  PerformanceAnalytics,
-  ggthemes,
-  robustbase,
-  kableExtra,
-  RcppRoll
+  tidyverse,     
+  devtools,     
+  rugarch,       # For GARCH modeling - this was crucial
+  rmgarch,       # For multivariate GARCH
+  forecast,      # For time series functions like ACF
+  tbl2xts,      
+  lubridate,     
+  PerformanceAnalytics, 
+  ggthemes,      
+  robustbase,    
+  kableExtra,   
+  RcppRoll       
 )
 
-# Currency data (all quoted vs USD)
-cncy       <- read_rds("data/currencies.rds")
-cncy_Carry <- read_rds("data/cncy_Carry.rds")   # G10 carry index
-cncy_value <- read_rds("data/cncy_value.rds")   # FX PPP value index
-cncyIV     <- read_rds("data/cncyIV.rds")       # FX implied vol index
-bbdxy      <- read_rds("data/bbdxy.rds")        # Bloomberg Dollar spot index
+# Load currency data - all quoted vs USD
+
+cncy       <- read_rds("data/currencies.rds")        # Raw currency prices
+cncy_Carry <- read_rds("data/cncy_Carry.rds")        # G10 carry index - for statement 2
+cncy_value <- read_rds("data/cncy_value.rds")        # FX PPP value index - for statement 2  
+cncyIV     <- read_rds("data/cncyIV.rds")            # FX implied vol index
+bbdxy      <- read_rds("data/bbdxy.rds")             # Bloomberg Dollar spot index - for Dollar strength analysis
 ```
 
-### 1. Cross sectional volatility: ZAR vs G10 vs others
+### Cross sectional volatility: ZAR vs G10 vs others
+
+I calculate returns for all currencies to measure volatility
 
 ``` r
-# Construct daily log returns and scaled returns for all currencies
+# First, I need to calculate returns for all currencies to measure volatility
+# Using log returns 
 cncy_rts <- cncy %>%  
-  group_by(Name) %>%  
-  arrange(date, .by_group = TRUE) %>% 
+  group_by(Name) %>%  # Calculate returns for each currency separately
+  arrange(date, .by_group = TRUE) %>% # Ensure dates are in order
   mutate(
-    dlogret   = log(Price) - log(lag(Price)),
-    scaledret = dlogret - mean(dlogret, na.rm = TRUE)
+    dlogret   = log(Price) - log(lag(Price)),  # Daily log return
+    scaledret = dlogret - mean(dlogret, na.rm = TRUE)  # Scaled return (de-meaned)
   ) %>% 
-  filter(date > dplyr::first(date)) %>% 
+  filter(date > dplyr::first(date)) %>% # Remove first row with NA return
   ungroup() %>% 
-  mutate(Name = gsub("_Cncy", "", Name))
+  mutate(Name = gsub("_Cncy", "", Name)) # Clean up currency names
 
-# Define G10 set in the cleaned Name space
+# Define G10 currencies 
+# I looked up which currencies are considered G10 and matched them to our data ( some not included in our data )
 g10_vec <- c(
   "Australia_Inv",  # AUD
   "Canada",         # CAD
@@ -1107,34 +1099,37 @@ g10_vec <- c(
   "Norway",         # NOK
   "Sweden",         # SEK
   "UK_Inv"          # GBP
-  # USD is the base here
+  # USD is the base currency here, so not included
 )
 
-# Volatility measures since 2015
+# Now calculate various volatility measures since 2015
+# I'm using multiple measures to get a comprehensive view
 vol_cncy <- cncy_rts %>% 
-  filter(date > ymd(20150101)) %>% 
+  filter(date > ymd(20150101)) %>% # Focus on recent period as mentioned in question
   group_by(Name) %>%
   summarise(
-    std_dev      = sd(dlogret, na.rm = TRUE),
-    mad          = mean(abs(dlogret - mean(dlogret, na.rm = TRUE)), na.rm = TRUE),
-    downside_dev = sqrt(mean(ifelse(dlogret < 0, dlogret^2, 0), na.rm = TRUE)),
+    std_dev      = sd(dlogret, na.rm = TRUE),  # Standard deviation - most common measure
+    mad          = mean(abs(dlogret - mean(dlogret, na.rm = TRUE)), na.rm = TRUE), # Mean absolute deviation
+    downside_dev = sqrt(mean(ifelse(dlogret < 0, dlogret^2, 0), na.rm = TRUE)), # Downside deviation (semi-deviation)
     d_ratio      = (n() - sum(ifelse(dlogret < 0, dlogret, 0))) / 
-                   (n() + sum(ifelse(dlogret > 0, dlogret, 0))),
+                   (n() + sum(ifelse(dlogret > 0, dlogret, 0))), # Not sure if this is the correct formulation
     .groups = "drop"
   ) %>% 
   mutate(
+    # Create groups for comparison: ZAR vs G10 vs Other emerging markets
     Group = case_when(
-      Name == "SouthAfrica" ~ "ZAR",
-      Name %in% g10_vec     ~ "G10",
-      TRUE                  ~ "Other"
+      Name == "SouthAfrica" ~ "ZAR",      # Our currency of interest
+      Name %in% g10_vec     ~ "G10",      # Major developed currencies
+      TRUE                  ~ "Other"     # Everything else
     )
   )
 
-# Rank by standard deviation
+# Rank currencies by volatility to see where ZAR stands
 ranked_data <- vol_cncy %>% 
-  arrange(desc(std_dev)) %>% 
-  mutate(rank = row_number()) %>% 
-  select(rank, Name, Group, everything())
+  arrange(desc(std_dev)) %>% # Sort from highest to lowest volatility
+  mutate(rank = row_number()) %>% # Add rank column
+  select(rank, Name, Group, everything()) # Reorder columns
+
 
 kableExtra::kable(
   ranked_data,
@@ -1189,28 +1184,34 @@ kableExtra::kable(
 
 Volatility ranking of currencies (log returns, since 2015)
 
+SA is the 8th most volatile currency so we can conclude that the
+statement is true.
+
 ``` r
-# Identify top 10 by volatility
+# Create visualization to make the volatility comparison clear
+# First, add ranks to our volatility data
 vol_with_rank <- vol_cncy %>% 
   arrange(desc(std_dev)) %>% 
   mutate(rank = row_number())
 
-# Keep: top 10 *or* any G10 currency
+# We want to show: top 10 most volatile currencies OR any G10 currency
+# This ensures we see ZAR's position and how G10 currencies compare
 plot_set <- vol_with_rank %>% 
   filter(rank <= 10 | Group == "G10")
 
+# Create the plot - using bars ordered by volatility
 plot_set %>% 
-  mutate(Name = fct_reorder(Name, std_dev)) %>% 
+  mutate(Name = fct_reorder(Name, std_dev)) %>% # Order bars by volatility
   ggplot() +
   geom_col(aes(x = Name, y = std_dev, fill = Group), alpha = 0.9) +
   scale_fill_manual(
     values = c(
-      "ZAR"   = "red",
-      "G10"   = "grey40",
-      "Other" = "grey80"
+      "ZAR"   = "red",      # Highlight ZAR in red
+      "G10"   = "grey40",   # G10 in dark grey
+      "Other" = "grey80"    # Others in light grey
     )
   ) +
-  coord_flip() +
+  coord_flip() + # Horizontal bars are easier to read with many categories
   labs(
     title    = "Cross sectional volatility of currencies",
     subtitle = "Top 10 currencies by volatility plus G10 majors (since 2015)",
@@ -1218,64 +1219,73 @@ plot_set %>%
     y = "Standard deviation",
     fill = ""
   ) +
-  fmxdat::theme_fmx()
+  fmxdat::theme_fmx() 
 ```
 
 ![](README_files/figure-gfm/Q4-vol-plot-1.png)<!-- -->
 
-------------------------------------------------------------------------
+Again , SA is more volatile than the G10 currencies.
+
+### 2. Analyzing ZAR return persistence
 
 ``` r
-# Simple returns for ZAR only
+# Now i focus specifically on ZAR for deeper analysis
+# Using simple returns this time instead of log returns for GARCH modeling
 zar_rts <- cncy %>%  
-  filter(date > ymd(20150101)) %>% 
+  filter(date > ymd(20150101)) %>% # Consistent time period
   group_by(Name) %>%  
-  mutate(ret = Price / lag(Price) - 1) %>% 
-  filter(date > dplyr::first(date)) %>% 
+  mutate(ret = Price / lag(Price) - 1) %>% # Simple return calculation
+  filter(date > dplyr::first(date)) %>% # Remove NA
   ungroup() %>%  
-  mutate(Name = gsub("_Cncy", "", Name)) %>% 
-  filter(Name == "SouthAfrica") %>% 
-  filter(!is.na(ret)) %>% 
-  select(-Name, -Price) %>% 
-  tbl_xts()
+  mutate(Name = gsub("_Cncy", "", Name)) %>% # Clean names
+  filter(Name == "SouthAfrica") %>% # Focus on ZAR only
+  filter(!is.na(ret)) %>% # Remove any remaining NAs
+  select(-Name, -Price) %>% # Keep only date and returns
+  tbl_xts() # Convert to xts format for time series analysis
 
-# Construct the three series: returns, squared returns, absolute returns
+# I  Create three different return series to examine persistence (practical 6 ):
+# Raw returns, squared returns (variance proxy), absolute returns (volatility proxy)
 Plotdata <- cbind(zar_rts, zar_rts^2, abs(zar_rts))
 colnames(Plotdata) <- c("Returns", "Returns_Sqd", "Returns_Abs")
 
+# Convert back to tidy format for ggplot
 Plotdata <- Plotdata %>% 
   xts_tbl() %>% 
   gather(ReturnType, Returns, -date)
 
+# Plot to visually inspect persistence patterns
 ggplot(Plotdata) + 
   geom_line(aes(x = date, y = Returns, colour = ReturnType, alpha = 0.5)) + 
   ggtitle("Return Type Persistence: ZAR") + 
-  facet_wrap(~ReturnType, nrow = 3, ncol = 1, scales = "free") + 
-  guides(alpha = "none", colour = "none") + 
+  facet_wrap(~ReturnType, nrow = 3, ncol = 1, scales = "free") + # Separate plots for each type
+  guides(alpha = "none", colour = "none") + # Remove legends
   fmxdat::theme_fmx()
 ```
 
 ![](README_files/figure-gfm/Q4-zar-persistence-1.png)<!-- -->
 
 ``` r
-forecast::Acf(zar_rts,   main = "ACF: ZAR return")
+# Autocorrelation analysis - prep for GARCH
+# If returns show no autocorrelation but squared returns do, it suggests volatility clustering
+forecast::Acf(zar_rts,   main = "ACF: ZAR return")           # Check raw return persistence
 ```
 
 ![](README_files/figure-gfm/Q4-zar-acf-1.png)<!-- -->
 
 ``` r
-forecast::Acf(zar_rts^2, main = "ACF: Squared ZAR return")
+forecast::Acf(zar_rts^2, main = "ACF: Squared ZAR return")   # Check volatility persistence
 ```
 
 ![](README_files/figure-gfm/Q4-zar-acf-2.png)<!-- -->
 
 ``` r
-forecast::Acf(abs(zar_rts), main = "ACF: Absolute ZAR return")
+forecast::Acf(abs(zar_rts), main = "ACF: Absolute ZAR return") # Alternative volatility measure
 ```
 
 ![](README_files/figure-gfm/Q4-zar-acf-3.png)<!-- -->
 
 ``` r
+# Formal test for ARCH effects - significant p-value means volatility clustering exists
 Box.test(coredata(zar_rts^2), type = "Ljung-Box", lag = 12)
 ```
 
@@ -1285,29 +1295,34 @@ Box.test(coredata(zar_rts^2), type = "Ljung-Box", lag = 12)
     ## data:  coredata(zar_rts^2)
     ## X-squared = 101.98, df = 12, p-value = 2.22e-16
 
-------------------------------------------------------------------------
+“X-squared = 101.98, df = 12, p-value = 2.22e-16.” The small p-value
+means we reject the null hypothesis (no autocorrelation) in the squared
+returns. This suggests the presence of volatility clustering, and using
+a GARCH model could help capture the time-varying risk.
 
-### 3. Fitting GARCH(1,1) to ZAR (rugarch, copy of Practical 6)
+### Fitting GARCH(1,1) to ZAR (rugarch, copy of Practical 6)
 
 ``` r
-# Use the same object name as Nico: porteqw now holds ZAR returns
-porteqw <- zar_rts
+# Following the practical example structure for consistency
+porteqw <- zar_rts # Renaming to match practical example
 
-# GARCH(1,1) specification as in the notes
+# Specify GARCH(1,1) model - this took some time to get right
 garch11 <- ugarchspec(
   variance.model = list(
-    model      = c("sGARCH","gjrGARCH","eGARCH","fGARCH","apARCH")[1],
-    garchOrder = c(1, 1)
+    model      = c("sGARCH","gjrGARCH","eGARCH","fGARCH","apARCH")[1], # Standard GARCH
+    garchOrder = c(1, 1) # 1 ARCH term, 1 GARCH term
   ),
   mean.model = list(
-    armaOrder    = c(1, 0),
-    include.mean = TRUE
+    armaOrder    = c(1, 0), # AR(1) model for mean
+    include.mean = TRUE     # Include constant in mean equation
   ),
-  distribution.model = c("norm", "snorm", "std", "sstd", "ged", "sged", "nig", "ghyp", "jsu")[1]
+  distribution.model = c("norm", "snorm", "std", "sstd", "ged", "sged", "nig", "ghyp", "jsu")[1] # Normal distribution
 )
 
+# Fit the model - this can take a moment
 garchfit1 <- ugarchfit(spec = garch11, data = porteqw)
 
+# Display results
 garchfit1
 ```
 
@@ -1405,9 +1420,10 @@ garchfit1
     ## 4    50     56.46       0.2162
     ## 
     ## 
-    ## Elapsed time : 0.355077
+    ## Elapsed time : 0.187216
 
 ``` r
+# Extract coefficient table 
 garch_tab <- garchfit1@fit$matcoef
 kableExtra::kable(garch_tab, caption = "GARCH(1,1) estimates for ZAR")
 ```
@@ -1422,22 +1438,24 @@ kableExtra::kable(garch_tab, caption = "GARCH(1,1) estimates for ZAR")
 
 GARCH(1,1) estimates for ZAR
 
-Conditional variance plot, identical structure:
-
 ``` r
-sigma <- sigma(garchfit1) %>% xts_tbl() 
+# Plot the estimated conditional volatility from GARCH
+sigma <- sigma(garchfit1) %>% xts_tbl() # Extract conditional sigma
 colnames(sigma) <- c("date", "sigma") 
 sigma <- sigma %>% mutate(date = as.Date(date))
 
+# Compare GARCH volatility with simple squared returns volatility
 gg <- ggplot() + 
+  # Plot rolling volatility from squared returns (naive approach)
   geom_line(
     data = Plotdata %>% 
       filter(ReturnType == "Returns_Sqd") %>% 
       select(date, Returns) %>% 
       unique() %>% 
-      mutate(Returns = sqrt(Returns)),
+      mutate(Returns = sqrt(Returns)), # Convert variance to volatility
     aes(x = date, y = Returns)
   ) + 
+  # Overlay GARCH volatility in red
   geom_line(
     data = sigma,
     aes(x = date, y = sigma),
@@ -1451,16 +1469,18 @@ gg <- ggplot() +
   ) + 
   fmxdat::theme_fmx(CustomCaption = TRUE)
 
+
 fmxdat::finplot(gg, y.pct = TRUE, y.pct_acc = 1)
 ```
 
 ![](README_files/figure-gfm/Q4-zar-sigma-plot-1.png)<!-- -->
 
-News impact curve for the ZAR GARCH model:
-
 ``` r
+# News Impact Curve - shows how news (shocks) affect future volatility
 ni <- newsimpact(z = NULL, garchfit1)
 
+# Plot the NIC - I struggled to understand this at first
+# It shows asymmetry: how positive vs negative shocks impact volatility differently
 plot(
   ni$zx, ni$zy,
   ylab = ni$yexpr,
@@ -1472,24 +1492,29 @@ plot(
 
 ![](README_files/figure-gfm/Q4-zar-nic-1.png)<!-- -->
 
-### 4. Alternative GARCH forms for ZAR (GJR and EGARCH) and NIC comparison
+### Alternative GARCH forms for ZAR (GJR and EGARCH) and NIC comparison
 
 ``` r
-# GJR GARCH with student t
+# Standard GARCH assumes symmetric volatility response
+# But in finance, negative shocks often increase volatility more (leverage effect)
+# So i try asymmetric GARCH models
+
+# GJR-GARCH with student t distribution - accounts for leverage effect
 gjrgarch11 <- ugarchspec(
   variance.model = list(
-    model      = c("sGARCH","gjrGARCH","eGARCH","fGARCH","apARCH")[2],
+    model      = c("sGARCH","gjrGARCH","eGARCH","fGARCH","apARCH")[2], # GJR-GARCH
     garchOrder = c(1, 1)
   ),
   mean.model = list(
     armaOrder    = c(1, 0),
     include.mean = TRUE
   ),
-  distribution.model = c("norm", "snorm", "std", "sstd", "ged", "sged", "nig", "ghyp", "jsu")[3]
+  distribution.model = c("norm", "snorm", "std", "sstd", "ged", "sged", "nig", "ghyp", "jsu")[3] # Student t
 )
 
 garchfit2 <- ugarchfit(spec = gjrgarch11, data = as.matrix(porteqw))
 
+# Display results
 kableExtra::kable(
   garchfit2@fit$matcoef,
   caption = "GJR GARCH(1,1) with student t distribution for ZAR"
@@ -1509,23 +1534,23 @@ kableExtra::kable(
 GJR GARCH(1,1) with student t distribution for ZAR
 
 ``` r
-# EGARCH(1,1) with student t
+# EGARCH - another asymmetric model with exponential form
 egarch11 <- ugarchspec(
   variance.model = list(
-    model      = c("sGARCH","gjrGARCH","eGARCH","fGARCH","apARCH")[3],
+    model      = c("sGARCH","gjrGARCH","eGARCH","fGARCH","apARCH")[3], # EGARCH
     garchOrder = c(1, 1)
   ),
   mean.model = list(
     armaOrder    = c(1, 0),
     include.mean = TRUE
   ),
-  distribution.model = c("norm", "snorm", "std", "sstd", "ged", "sged", "nig", "ghyp", "jsu")[3]
+  distribution.model = c("norm", "snorm", "std", "sstd", "ged", "sged", "nig", "ghyp", "jsu")[3] # Student t
 )
 
 garchfit3 <- ugarchfit(spec = egarch11, data = as.matrix(porteqw))
 
-# Sign bias and info criteria, as in Nico’s notes
-signbias(garchfit1)
+# Model diagnostics and comparison
+signbias(garchfit1) # Test for sign bias - if significant, asymmetric models are better
 ```
 
     ##                      t-value       prob sig
@@ -1535,7 +1560,7 @@ signbias(garchfit1)
     ## Joint Effect       8.9793762 0.02956635  **
 
 ``` r
-infocriteria(garchfit1)
+infocriteria(garchfit1) # Information criteria for model selection
 ```
 
     ##                       
@@ -1564,9 +1589,9 @@ infocriteria(garchfit3)
     ## Shibata      -6.387718
     ## Hannan-Quinn -6.379722
 
-News impact curves for all three, identical helper function:
-
 ``` r
+# Compare News Impact Curves across all three models
+#function to extract NIC data - copied from practical
 NICurveMaker <- function(Fit, Name) {
   NI <- newsimpact(z = NULL, Fit)
   NI <- cbind(NI$zx, NI$zy)
@@ -1574,15 +1599,18 @@ NICurveMaker <- function(Fit, Name) {
   NI %>% data.frame() %>% tibble::as_tibble()
 }
 
+# Extract NIC data for all three models
 NI1 <- NICurveMaker(garchfit1, "GARCH11")
 NI2 <- NICurveMaker(garchfit2, "GJR")
 NI3 <- NICurveMaker(garchfit3, "EGARCH")
 
+# Combine and reshape for plotting
 NI <- cbind(NI1, NI2, NI3) %>% 
   gather(Model, Sigma, starts_with("Sigma")) %>% 
   rename(Epsilon = Epsilon_GARCH11) %>% 
   select(-Epsilon_GJR, -Epsilon_EGARCH)
 
+# Plot comparison - this clearly shows asymmetry differences
 ggplot(NI) + 
   geom_line(aes(x = Epsilon, y = Sigma, colour = Model)) + 
   ggtitle("News Impact Curves: ZAR") + 
@@ -1591,43 +1619,40 @@ ggplot(NI) +
 
 ![](README_files/figure-gfm/Q4-zar-nic-compare-1.png)<!-- -->
 
-------------------------------------------------------------------------
-
-### 5. GO GARCH and time varying correlation between ZAR and Dollar strength
-
-Now we bring in the multivariate flavour, matching Practical 7 style,
-but on a simple two series system: ZAR and the Dollar index (bbdxy).
-This speaks directly to the “benefits when the Dollar is strong”
-statement.
+### GO GARCH and time varying correlation between ZAR and Dollar strength
 
 ``` r
-# Dollar index log returns
+# Now  i  examine the second statement about Dollar strength using prac 7 - multivariate analysis
+#I analyse the  correlation between ZAR and Dollar index
+
+# Calculate Dollar index log returns
 g10_rts <- bbdxy %>% 
   arrange(date) %>% 
-  mutate(G10 = log(Price) - log(lag(Price))) %>% 
+  mutate(G10 = log(Price) - log(lag(Price))) %>% # Log returns for Dollar index
   filter(date > dplyr::first(date)) %>% 
   select(date, G10)
 
-# ZAR log returns (from earlier cncy_rts object)
+# Get ZAR log returns from our earlier calculation
 zar_log_rts <- cncy_rts %>% 
   filter(Name == "SouthAfrica") %>% 
   rename(ZAR = dlogret) %>% 
   select(date, ZAR)
 
-# Merge and convert to xts
+# Merge and convert to xts for multivariate GARCH
 xts_rtn <- left_join(g10_rts, zar_log_rts, by = "date") %>% 
-  drop_na() %>% 
-  tbl_xts()
+  drop_na() %>% # Remove any missing values
+  tbl_xts() # Convert to xts format
 ```
 
-Helper for renaming pairwise correlations (same as Practical 7):
-
 ``` r
+# function from practical to rename DCC correlation outputs
+# This was complex - had to carefully study how the correlation matrices are structured ( struggled a bit )
 renamingdcc <- function(ReturnSeries, DCC.TV.Cor) {
   dates <- zoo::index(ReturnSeries)
   N     <- ncol(ReturnSeries)
   names <- colnames(ReturnSeries)
   
+  # Create all possible pairs
   pairs      <- expand.grid(names, names)
   pair_names <- paste0(pairs$Var1, "_", pairs$Var2)
   
@@ -1635,6 +1660,7 @@ renamingdcc <- function(ReturnSeries, DCC.TV.Cor) {
   colnames(df) <- pair_names
   df$date      <- dates
   
+  # Reshape to long format for plotting
   df %>% 
     tidyr::pivot_longer(
       cols      = -date,
@@ -1645,34 +1671,40 @@ renamingdcc <- function(ReturnSeries, DCC.TV.Cor) {
 }
 ```
 
-GO GARCH specification and fit, directly from Nico’s multivariate notes:
-
 ``` r
-# Univariate GJR GARCH spec for each series
+# GO-GARCH model for multivariate volatility
+# This allows us to estimate time-varying correlation
+
+# First specify univariate GARCH models for each series
 uspec <- ugarchspec(
   variance.model = list(
-    model      = "gjrGARCH",
+    model      = "gjrGARCH", # Using GJR-GARCH for asymmetry
     garchOrder = c(1, 1)
   ),
   mean.model = list(
     armaOrder    = c(1, 0),
     include.mean = TRUE
   ),
-  distribution.model = "sstd"
+  distribution.model = "sstd" # Skewed student t for fat tails and asymmetry
 )
 
+# Replicate specification for both series
 multi_univ_garch_spec <- multispec(replicate(ncol(xts_rtn), uspec))
 
+# GO-GARCH specification 
 spec.go <- gogarchspec(
   multi_univ_garch_spec,
-  distribution.model = "mvnorm",
-  ica                = "fastica"
+  distribution.model = "mvnorm", # Multivariate normal
+  ica                = "fastica" # Independent component analysis
 )
 
+# Use parallel processing - this speeds up estimation significantly
 cl <- makePSOCKcluster(10)
 
+# Fit univariate models first
 multf <- multifit(multi_univ_garch_spec, xts_rtn, cluster = cl)
 
+# Fit GO-GARCH model - this can take a while
 fit.gogarch <- gogarchfit(
   spec    = spec.go,
   data    = xts_rtn,
@@ -1684,7 +1716,7 @@ fit.gogarch <- gogarchfit(
   rseed    = 100
 )
 
-stopCluster(cl)
+stopCluster(cl) # Always stop cluster when done
 
 print(fit.gogarch)
 ```
@@ -1715,24 +1747,25 @@ print(fit.gogarch)
     ## [1,] -0.000363 0.00406
     ## [2,]  0.008454 0.00655
 
-Time varying correlations, same gymnastics as in the notes:
-
 ``` r
+# Extract time-varying correlations
 gog.time.var.cor <- rcor(fit.gogarch)
-gog.time.var.cor <- aperm(gog.time.var.cor, c(3, 2, 1))
+gog.time.var.cor <- aperm(gog.time.var.cor, c(3, 2, 1)) # Rearrange dimensions
 dim(gog.time.var.cor) <- c(
   nrow(gog.time.var.cor),
   ncol(gog.time.var.cor)^2
 )
 
+# Use renamingdcc function to rename and reshape
 gog.time.var.cor <- renamingdcc(
   ReturnSeries = xts_rtn,
   DCC.TV.Cor   = gog.time.var.cor
 )
 
+# Plot the time-varying correlation between ZAR and Dollar index
 g2 <- ggplot(
   gog.time.var.cor %>% 
-    filter(grepl("ZAR_", Pairs), !grepl("_ZAR", Pairs))
+    filter(grepl("ZAR_", Pairs), !grepl("_ZAR", Pairs)) # Get ZAR pairs but not ZAR_ZAR
 ) +
   geom_line(aes(x = date, y = Rho, colour = Pairs)) +
   theme_hc() +
@@ -1745,44 +1778,45 @@ print(g2)
 
 ------------------------------------------------------------------------
 
-### 6. Linking to G10 carry and PPP value (for narrative)
+### G10 carry and PPP value (for narrative)
 
-For the second statement in the question, you can add very short extra
-chunks to relate ZAR returns to:
-
-- G10 carry index `cncy_Carry`  
-- PPP value index `cncy_value`  
-- FX implied vol `cncyIV`
-
-For example, simple correlations over the sample:
+I added this but was unsure about it
 
 ``` r
-# Simple daily log returns for ZAR, carry, value, and Dollar index
+# Finally, let's examine the relationships mentioned in the second statement
+# Calculate returns for all relevant series
+
+# ZAR returns (already calculated)
 zar_daily <- cncy_rts %>% filter(Name == "SouthAfrica") %>% select(date, ZAR = dlogret)
 
+# G10 carry index returns
 carry_rts <- cncy_Carry %>% 
   arrange(date) %>% 
   mutate(Carry = log(Price) - log(lag(Price))) %>% 
   filter(!is.na(Carry)) %>% 
   select(date, Carry)
 
+# PPP value index returns  
 value_rts <- cncy_value %>% 
   arrange(date) %>% 
   mutate(Value = log(Price) - log(lag(Price))) %>% 
   filter(!is.na(Value)) %>% 
   select(date, Value)
 
+# Dollar index returns (alternative calculation)
 dxy_rts <- bbdxy %>% 
   arrange(date) %>% 
   mutate(DXY = log(Price) - log(lag(Price))) %>% 
   filter(!is.na(DXY)) %>% 
   select(date, DXY)
 
+# Combine all series
 link_df <- zar_daily %>% 
   inner_join(carry_rts, by = "date") %>% 
   inner_join(value_rts, by = "date") %>% 
   inner_join(dxy_rts,   by = "date")
 
+# Calculate correlation matrix - this gives us the relationships
 round(cor(link_df %>% select(-date), use = "complete.obs"), 3)
 ```
 
@@ -1791,6 +1825,31 @@ round(cor(link_df %>% select(-date), use = "complete.obs"), 3)
     ## Carry -0.326  1.000 -0.142 -0.202
     ## Value  0.246 -0.142  1.000  0.322
     ## DXY    0.539 -0.202  0.322  1.000
+
+ZAR ranks as the 8th most volatile currency among 41 currencies in the
+sample (starting year = 2015 , if we change it to 2016/2017 it moves up
+to number 5), and is more volatile than all G10 currencies. Univariate
+GARCH models confirm strong and persistent volatility clustering for
+ZAR. The asymmetric GJR GARCH model further suggests that positive
+shocks to ZAR returns increase volatility more than negative shocks of
+the same magnitude.
+
+ZAR shows moderate relationships with carry and value factors, with
+correlations of about −0.33 with the G10 carry index and +0.25 with the
+value index. However, the claim that ZAR benefits from periods of strong
+Dollar performance is not supported by the data. ZAR returns are
+positively correlated with the Dollar index (about +0.54), which in this
+quotation convention means that ZAR typically weakens when the Dollar
+strengthens. GO GARCH results indicate that this relationship is time
+varying, so in this sample the statement is not strongly supported.
+
+The GJR GARCH model indicates that ZAR volatility responds more strongly
+to positive shocks than to negative shocks (γ ≈ −0.05), which is the
+opposite of the usual leverage effect found in equity markets. This
+points to a different volatility mechanism for ZAR, consistent with the
+idea that good news rallies and periods of strong inflows can be
+associated with elevated and persistent volatility in an emerging market
+currency.
 
 QUESTION 5
 
