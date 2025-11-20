@@ -1028,8 +1028,6 @@ most volatility and which sectors they are found by their sizes but I
 was unsure how to do that , plus I felt my solution was way all over the
 place trying to include all code so I excluded it)
 
-### Question 3
-
 ### Question 4: Volatility and GARCH estimates
 
 We are evaluating whether the South African Rand (ZAR) has been among
@@ -1420,7 +1418,7 @@ garchfit1
     ## 4    50     56.46       0.2162
     ## 
     ## 
-    ## Elapsed time : 0.187216
+    ## Elapsed time : 0.2533669
 
 ``` r
 # Extract coefficient table 
@@ -1851,142 +1849,106 @@ idea that good news rallies and periods of strong inflows can be
 associated with elevated and persistent volatility in an emerging market
 currency.
 
-QUESTION 5
+# QUESTION 5: Global Balanced Index Fund Portfolio Construction
 
-\## 0. Libraries
+We want to construct a global balanced index fund portfolio using a mix
+of traded global indexes.
+
+## Load all required packages at the top
 
 ``` r
+# Load all required packages
 pacman::p_load(
-  tidyverse,
-  xts,
-  tbl2xts,
-  RiskPortfolios,
+  tidyverse,      
+  xts,            
+  tbl2xts,        
+  RiskPortfolios, 
   PerformanceAnalytics,
-  PortfolioAnalytics,
-  lubridate,
-  kableExtra,
-  quadprog
+  PortfolioAnalytics,   
+  lubridate,      
+  kableExtra,   
+  quadprog,       # For quadratic optimization
+  cluster,        # For hierarchical clustering
+  readr,          
+  dplyr         
 )
+
 
 devtools::source_gist("https://gist.github.com/Nicktz/bd2614f8f8a551881a1dc3c11a1e7268")
 ```
 
-------------------------------------------------------------------------
-
-\## 1. Load data and build monthly return panel
-
-This uses monthly data from 2011 onwards and drops assets with less than
-five calendar years of data.
+## DATA LOADING AND PREPARATION
 
 ``` r
-pacman::p_load(
-  tidyverse,
-  xts,
-  tbl2xts,
-  RiskPortfolios,
-  PerformanceAnalytics,
-  PortfolioAnalytics,
-  lubridate,
-  kableExtra,
-  quadprog
-)
-
-devtools::source_gist("https://gist.github.com/Nicktz/bd2614f8f8a551881a1dc3c11a1e7268")
-library(readr)
-library(dplyr)
-# Load and filter MAA data
-MAA <- read_rds("data/MAA.rds") %>%
+MAA_data <- read_rds("data/MAA.rds") %>%
   filter(Ticker %in% c("LUACTRUU Index", "LUAGTRUU Index",
                        "BCOMTR Index", "LP05TREH Index"))
 
-# Load and filter MSCI data
-msci <- read_rds("data/msci.rds") %>%
+# Load and filter MSCI equity indices
+msci_data <- read_rds("data/msci.rds") %>%
   filter(Name %in% c("MSCI ACWI", "MSCI USA", "MSCI RE",
                      "MSCI Jap", "MSCI China"))
 
-# Combine benchmarks into a single tidy panel
+# Combine all datasets 
 df_full <- bind_rows(
-  msci %>% rename(Tickers = Name),
-  MAA  %>% select(-Name) %>% rename(Tickers = Ticker)
+  msci_data %>% rename(Tickers = Name),
+  MAA_data %>% select(-Name) %>% rename(Tickers = Ticker)
 ) %>%
-  arrange(date)
+  arrange(date)  
 
-# Monthly data after 2010
+# Create monthly returns from 2011
 monthly_df <- df_full %>%
-  filter(date >= ymd(20110101)) %>%       # data after 2010
+  filter(date >= ymd(20110101)) %>%       
   group_by(Tickers) %>%
-  # Keep only assets with at least five distinct calendar years of data
-  filter(n_distinct(year(date)) >= 5) %>%
+  # Keep only assets with at least 5 years of data 
+  filter(n_distinct(year(date)) >= 5) %>% 
   ungroup() %>%
   mutate(YM = format(date, "%Y%m")) %>%
   arrange(date) %>%
   group_by(Tickers, YM) %>%
-  # Use last observation in each month
   filter(date == dplyr::last(date)) %>%
+  # Calculate monthly returns
   group_by(Tickers) %>%
   mutate(ret = Price / lag(Price) - 1) %>%
   ungroup() %>%
   select(date, Tickers, ret) %>%
-  filter(!is.na(ret))   # drop first NA return in each series
+  filter(!is.na(ret))   
 
-# Wide return matrix (monthly)
+# Convert to wide format matrix for portfolio optimization
 return_mat <- monthly_df %>%
   spread(Tickers, ret)
 
 return_mat_Nodate <- data.matrix(return_mat[, -1])
 ```
 
-------------------------------------------------------------------------
-
-\## 2. Single period optimiser: `optim_foo()`
-
-This function
-
-- takes a look back window in months up to a given rebalance date
-
-- keeps only assets with at least five years of data in that window
-
-- builds Sigma and mu using `RiskPortfolios::covEstimation()` and
-  geometric means
-
-- maps tickers to asset classes according to the MAA table
-
-- bonds and credit: government rates plus corporate credit
-
-- commodity: BCOMTR
-
-- equity: all MSCI indices
-
-- builds `Amat` and `bvec` with group constraints that match the exam
-  rules
-
-- solves with `quadprog::solve.QP()` and returns weights as a tibble.
+## PORTFOLIO OPTIMIZER FUNCTION
 
 ``` r
 optim_foo <- function(return_mat,
                       end_date,
-                      lookback_months = 120,     # at least ten years
-                      LB        = 0.01,
-                      UB        = 0.35,          # single asset at most 35%
-                      bond_UB   = 0.25,          # bonds and credit at most 25%
-                      eq_UB     = 0.60,          # equity at most 60%
-                      com_UB    = 0.15) {        # commodities at most 15%
+                      lookback_months = 120,    # 10 years of monthly data
+                      LB        = 0.01,         # Minimum 1% per asset
+                      UB        = 0.35,         # Maximum 35% per single asset
+                      bond_UB   = 0.25,         # Bonds max 25% of portfolio
+                      eq_UB     = 0.60,         # Equities max 60%
+                      com_UB    = 0.15) {       # Commodities max 15%
   
-  # 1. Select look back window (assumes one row per month)
+  # 1. SELECT LOOKBACK WINDOW
   window_df <- return_mat %>%
     filter(date <= end_date) %>%
     arrange(date) %>%
-    slice_tail(n = lookback_months)
+    slice_tail(n = lookback_months)  # Last 'lookback_months' observations
   
+  # Safety check - ensure we have enough data
   if (nrow(window_df) < lookback_months) {
     warning("Not enough history for lookback at ", end_date)
     return(NULL)
   }
   
-  # 2. Drop date and enforce at least five years of data per asset
-  X <- data.matrix(window_df[, -1])
+  #  Remove assets with insufficient history
+  X <- data.matrix(window_df[, -1])  
   
-  # require at least 60 non NA monthly observations (about five years)
+  # Keep only assets with at least 60 non-NA observations (5 years)
   valid_cols    <- colSums(!is.na(X)) >= 60
   X_valid       <- X[, valid_cols, drop = FALSE]
   assets_valid  <- colnames(X_valid)
@@ -1996,23 +1958,18 @@ optim_foo <- function(return_mat,
     return(NULL)
   }
   
-  # 3. Estimate covariance (Sigma) and geometric mean returns (Mu)
+  # 3. ESTIMATE COVARIANCE AND RETURNS
+  # Using Ledoit-Wolf shrinkage for better covariance estimation
   Sigma <- RiskPortfolios::covEstimation(X_valid)
   
+  # Calculate geometric mean returns (more appropriate for compounding)
   Mu <- window_df %>%
     select(date, all_of(assets_valid)) %>%
     summarise(across(-date, ~ prod(1 + .)^(1 / n()) - 1)) %>%
     purrr::as_vector()
   
-  N <- length(assets_valid)
+  N <- length(assets_valid)  # Number of valid assets
   
-  # 4. Asset class mapping for constraints
-  # Based on the MAA image -table ( provided in the data set):
-  # - LGAGTRUH, LUAGTRUU, LEATTREU: rates (government bonds)
-  # - LGCPTREH, LUACTRUU, LP05TREH: credit (corporate bonds)
-  # All of these form the "bonds and credit instruments" bucket.
-  # - BCOMTR: commodity
-  # - MSCI indices: equity
   asset_class <- case_when(
     assets_valid == "BCOMTR Index" ~ "Commodity",
     assets_valid %in% c(
@@ -2022,35 +1979,37 @@ optim_foo <- function(return_mat,
     TRUE ~ "Equity"
   )
   
+  # Create indices for each asset class for constraint application
   bond_idx <- which(asset_class == "BondCredit")
   eq_idx   <- which(asset_class == "Equity")
   com_idx  <- which(asset_class == "Commodity")
   
-  # 5. Base constraints (long only, fully invested, single asset caps)
-  #    Amat^T w >= bvec
+  # 5. CONSTRAINTS MATRIX
+  # Base constraints: sum(weights)=1, lower bounds, upper bounds
   Amat <- cbind(
-    rep(1, N),         # sum w = 1
-    diag(N),           # w_i >= LB
-    -diag(N)           # -w_i >= -UB  gives w_i <= UB
+    rep(1, N),         # Sum of weights = 1 (fully invested)
+    diag(N),           # Lower bounds: w_i >= LB
+    -diag(N)           # Upper bounds: w_i <= UB (via -w_i >= -UB)
   )
   
   bvec <- c(
-    1,                 # fully invested
-    rep(LB, N),        # lower bound
-    -rep(UB, N)        # upper bound
+    1,                 # Fully invested constraint
+    rep(LB, N),        # Lower bounds
+    -rep(UB, N)        # Upper bounds (negative due to inequality direction)
   )
   
-  # 6. Group constraints: sum over group of w_i <= cap
+  #function to add group constraints
   add_group_constraint <- function(idx, cap, Amat, bvec) {
     if (length(idx) == 0) return(list(Amat = Amat, bvec = bvec))
     
-    g_vec <- rep(0, nrow(Amat))   # rows correspond to assets
-    g_vec[idx] <- -1              # -sum_{i in group} w_i >= -cap
+    g_vec <- rep(0, nrow(Amat))   # Initialize constraint vector
+    g_vec[idx] <- -1              # -sum(w_group) >= -cap
     Amat_new <- cbind(Amat, g_vec)
     bvec_new <- c(bvec, -cap)
     list(Amat = Amat_new, bvec = bvec_new)
   }
   
+
   tmp <- add_group_constraint(bond_idx, bond_UB, Amat, bvec)
   Amat <- tmp$Amat; bvec <- tmp$bvec
   
@@ -2060,16 +2019,16 @@ optim_foo <- function(return_mat,
   tmp <- add_group_constraint(com_idx,  com_UB,  Amat, bvec)
   Amat <- tmp$Amat; bvec <- tmp$bvec
   
-  meq <- 1  # first constraint (sum w = 1) is equality
+  meq <- 1  # First constraint (sum to 1) is equality
   
-  # 7. Solve quadratic program:
-  #    min (1/2) w' Sigma w - mu' w   subject to constraints
+  # 6. SOLVE QUADRATIC PROGRAM
+  #  min (1/2) w' Sigma w - mu' w
   w.opt <- quadprog::solve.QP(
-    Dmat = Sigma,
-    dvec = Mu,
-    Amat = Amat,
-    bvec = bvec,
-    meq  = meq
+    Dmat = Sigma,    # Covariance matrix
+    dvec = Mu,       # Expected returns  
+    Amat = Amat,     # Constraints matrix
+    bvec = bvec,     # Constraints vector
+    meq  = meq       # Number of equality constraints
   )$solution
   
   tibble(
@@ -2080,29 +2039,24 @@ optim_foo <- function(return_mat,
 }
 ```
 
-------------------------------------------------------------------------
-
-\## 3. Quarterly rebalancing dates
-
-We work with quarter end month ends (January, April, July, October).
+## 3. REBALANCING
 
 ``` r
-# Quarter end dates from the monthly series
+# Get quarter-end dates (Jan, Apr, Jul, Oct) for rebalancing (Why ?? )
 EOQ_datevec <- return_mat %>%
   select(date) %>%
   distinct() %>%
-  filter(month(date) %in% c(1, 4, 7, 10)) %>%
+  filter(month(date) %in% c(1, 4, 7, 10)) %>%  # Quarter-end months
   pull(date)
 ```
 
-------------------------------------------------------------------------
-
-\## 4. Rolling optimiser and results
+## ROLLING OPTIMIZATION
 
 ``` r
+# Wrapper function for rolling optimization
 Roll_optimizer <- function(return_mat,
                            EOQ_datevec,
-                           LookBackSel = 120,    # 120 months equals ten years
+                           LookBackSel = 120,    # 10-year lookback
                            ...) {
   optim_foo(return_mat,
             end_date        = EOQ_datevec,
@@ -2110,12 +2064,13 @@ Roll_optimizer <- function(return_mat,
             ...)
 }
 
-# Ten year look back as required
+# Execute rolling optimization across all quarter-end dates
 Result_roll <- EOQ_datevec %>%
   map_df(~ Roll_optimizer(return_mat,
                           EOQ_datevec = .,
                           LookBackSel = 120))
 
+# Display 
 kable(Result_roll %>% head(13))
 ```
 
@@ -2135,67 +2090,58 @@ kable(Result_roll %>% head(13))
 | 2021-04-30 | LUACTRUU Index |   0.23 |
 | 2021-04-30 | LUAGTRUU Index |   0.01 |
 
-------------------------------------------------------------------------
-
-\## 5. Stacked bar chart of portfolio weights over time
+## 5. PORTFOLIO WEIGHTS VISUALIZATION
 
 ``` r
-# Prepare xts object of weights at rebalance dates
+# Prepare data for stacked bar chart
 bar_xts <- Result_roll %>%
   select(date, stocks, weight) %>%
   spread(stocks, weight) %>%
-  tbl_xts() %>%
-  .[endpoints(., "months")]
+  tbl_xts() %>%                    # Convert to xts format
+  .[endpoints(., "months")]        # Keep only month-end points
 
-# Plot stacked weights
+# Create stacked bar chart of portfolio weights over time
 chart.StackedBar(
   bar_xts,
-  main = "Quarterly Rebalanced Global Balanced Index Fund"
+  main = "Quarterly Rebalanced Global Balanced Index Fund",
+  ylab = "Portfolio Weight",
+  xlab = "Date"
 )
 ```
 
 ![](README_files/figure-gfm/unnamed-chunk-10-1.png)<!-- -->
 
-``` r
-# StackBar of monthly weights (Note the stand-out rebalance weights...):
-#Result_roll %>% bar_xts() %>% .[endpoints(.,'months')] %>% chart.StackedBar()
-```
-
-# Clustering
-
-Using the Practical 5
-(<https://www.fmx.nfkatzke.com/posts/2020-08-17-practical-5/>), I
-cluster the indices on a Ledoit–Wolf shrunk correlation matrix to
-identify statistical comovement groups. The dendrogram suggests, for
-example, that \[equity indices\] cluster closely, while \[bond/credit\]
-and commodities sit in distinct branches.
+## 6. CLUSTERING ANALYSIS FOR COMOVEMENT (prac 5 )
 
 ``` r
-## 6. Cluster based comovement analysis (Practical 5)
-
-# Use the same monthly return matrix, drop date
+# CLUSTERING BASED COMOVEMENT ANALYSIS
+# Remove date column for clustering
 clust_mat <- return_mat %>%
   select(-date)
 
-# 6.1 Ledoit–Wolf covariance and correlation matrix (as in Practical 5)
+# 6.1 Estimate shrunk correlation matrix (Ledoit-Wolf)
 Sigma_clust <- RiskPortfolios::covEstimation(
   as.matrix(clust_mat),
-  control = list(type = "lw")
+  control = list(type = "lw")  # Ledoit-Wolf shrinkage
 )
 
+# Convert to correlation matrix
 corr_clust <- cov2cor(Sigma_clust)
 
-# 6.2 Distance matrix using the Dower metric: d_ij = sqrt( (1 - rho_ij) / 2 )
+
+# Distance = sqrt((1 - correlation)/2)
 distmat <- ((1 - corr_clust) / 2)^0.5
 
-# 6.3 Hierarchical clustering with Ward linkage (AGNES)
-library(cluster)
-
+# 6.3 Hierarchical clustering with Ward's method
 hc <- cluster::agnes(dist(distmat), method = "ward")
 
-# Basic dendrogram (you could beautify with the ggdendro helpers from Practical 5)
-plot(hc, which.plot = 2, main = "Hierarchical clustering of global indices",
-     xlab = "", sub = "")
+# Plot dendrogram to visualize clusters
+plot(hc, 
+     which.plot = 2, 
+     main = "Hierarchical Clustering of Global Indices",
+     xlab = "Indices", 
+     sub = "",
+     cex = 0.7)  # Smaller text for better fit
 ```
 
 ![](README_files/figure-gfm/unnamed-chunk-11-1.png)<!-- -->
