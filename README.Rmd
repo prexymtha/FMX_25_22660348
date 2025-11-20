@@ -27,6 +27,8 @@ knitr::opts_chunk$set(
 
 ### Question 1 
 
+My git is updating two files at once
+
 I struggled with this question....
 
 We can compute the rolling 3-year beta for each active manager and the ABC Fund against the benchmark.Then, we can create a scatterplot of returns vs. risk (beta) and overlay boxplots to show the distribution of betas for peers and highlight ABC Fund.
