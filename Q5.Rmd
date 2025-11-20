@@ -6,6 +6,8 @@ output: html_document
 
 # QUESTION 5: Global Balanced Index Fund Portfolio Construction
 
+We want to construct a global balanced index fund portfolio using a mix of traded global indexes.
+
 
 ## Load all required packages at the top
 
@@ -29,6 +31,7 @@ pacman::p_load(
 
 devtools::source_gist("https://gist.github.com/Nicktz/bd2614f8f8a551881a1dc3c11a1e7268")
 ```
+
 
 ## DATA LOADING AND PREPARATION
 
