@@ -639,6 +639,11 @@ PerformanceAnalytics::table.Stats(returns_xts)
 
 Market dispersion (still to complete )
 
+# CONCLUSION
+
+Overall, ABC differs from the rest of the industry in that its beta to the benchmark is lower than the peer average over the full sample, with its risk exposure usually sitting within, but at times outside, the peer risk range. It generates a positive annualised alpha relative to the benchmark, whereas the peer average delivers near zero alpha with a very high R-squared, indicating more benchmark hugging. Over the full period, ABC provides competitive to superior growth compared with peers, although rolling windows show that this outperformance is regime dependent rather than constant. Its volatility and downside risk are comparable to, or slightly lower than, peers, and its drawdowns are less severe than those of the benchmark, implying a more favourable risk–return trade off. 
+
+
 
 ### Question 2
 
