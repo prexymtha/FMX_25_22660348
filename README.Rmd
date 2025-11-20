@@ -27,7 +27,7 @@ knitr::opts_chunk$set(
 
 ### Question 1 
 
-My git is updating two files at once
+My git is updating two files at once.
 
 I struggled with this question....
 

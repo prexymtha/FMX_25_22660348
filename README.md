@@ -2892,7 +2892,7 @@ garchfit1
     ## 4    50     56.46       0.2162
     ## 
     ## 
-    ## Elapsed time : 0.2352121
+    ## Elapsed time : 0.2514789
 
 ``` r
 # Extract coefficient table 
