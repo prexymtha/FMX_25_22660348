@@ -238,10 +238,41 @@ ggplot(rolling_betas, aes(x = Series, y = Beta)) +
 
 ### Question 2
 
-------------------------------------------------------------------------
+To answer the first part of Question 2 on whether smaller stocks are
+more volatile than larger stocks, I focus on the last decade(2015-2024)
+of daily returns and compare volatility across size groups(Small , Mid ,
+Large Caps). I work with the `Hold_Rets_Sectors` data set, which
+contains daily returns, holdings weights, size group (`Group`) and
+sector labels for JSE stocks.
+
+In the lecturer’s notes, volatility (risk) is defined and measured using
+the standard deviation of returns, and it is emphasised that:
+
+- Standard deviation should be annualised when comparing different time
+  periods.
+- The usual shortcut ( ) is only theoretically correct when using
+  **logarithmic** returns, because annual log return is the sum of
+  monthly log returns.
+
+I proceed as follows:
+
+1.  I construct value weighted indices for each size group (Small Caps,
+    Mid Caps and Large Caps).
+2.  I convert their monthly simple returns to log returns using ((1 +
+    r)).
+3.  I compute a 36-month rolling standard deviation of these monthly log
+    returns.
+4.  I annualise this rolling standard deviation by multiplying by ().
+
+This yields a rolling annualised standard deviation of returns for each
+size group .If the Small Cap series has a consistently higher annualised
+standard deviation, I can conclude that smaller stocks have been more
+volatile than larger stocks locally.
+
+### Load libraries and raw data
 
 ``` r
-# Load readr using pacman
+# Load required packages
 pacman::p_load(
   readr,
   tidyverse,
@@ -250,11 +281,17 @@ pacman::p_load(
   PerformanceAnalytics,
   rmsfuns,
   fmxdat,
-  DescTools
+  DescTools,
+  RcppRoll
 )
 
-# Load the data
-Hold_Rets <- read_rds("data/Hold_Rets_Sectors.rds") 
+# Load the holdings and returns data with sector and size group labels
+Hold_Rets <- read_rds("data/Hold_Rets_Sectors.rds") %>%
+  mutate(
+    # Make the size and sector groups explicit instead of leaving them as NA
+    Group  = if_else(is.na(Group),  "Unclassified", Group),
+    Sector = if_else(is.na(Sector), "Unclassified", Sector)
+  )
 
 head(Hold_Rets)
 ```
@@ -269,64 +306,24 @@ head(Hold_Rets)
     ## 5 2015-01-02 AGL     -0.00757   0.0289 Large_Caps Resources  
     ## 6 2015-01-02 SOL     -0.0000232 0.0495 Large_Caps Resources
 
-To answer the first part of small stocks being highly volatile compared
-to larger stocks I will annualise the returns for the decade as
-requested by the question - I will also categorise the returns with
-their groups as either being small_cap or large_cap
+Here I explicitly rename `NA` groups to `"Unclassified"` so they do not
+silently disappear from the data. Later, when I compare volatility
+across size groups, I restrict the analysis to the proper size
+categories (Small_Caps, Mid_Caps, Large_Caps) and treat “Unclassified”
+separately if needed.
 
-In the lecturer’s notes, volatility (risk) is explicitly defined and
-measured using the standard deviation of returns, and we are told that:
-
-Standard deviation should be annualised when we compare different time
-periods.
-
-The usual shortcut SD \* sqrt(12) is only theoretically correct when we
-work with logarithmic returns, because annual log return is the sum of
-monthly log returns, which justifies the square root of time rule.
-
-So, to be consistent with the notes and to get a clean, comparable
-volatility measure, I:
-
-Construct value weighted indices for small caps and large caps.
-
-Convert their monthly simple returns to log returns using log(1 + ret).
-
-Compute a 36 month rolling standard deviation of these log monthly
-returns.
-
-Annualise that rolling SD by multiplying by sqrt(12).
-
-This gives me a rolling annualised standard deviation of returns for
-small caps and large caps over the past decade. Comparing these two
-series over time is a direct, textbook implementation of the lecturer’s
-definition of volatility, so it is an appropriate way to answer 2(i): if
-the small cap series has a consistently higher annualised SD, we can
-conclude that smaller stocks have been more volatile than larger stocks
-locally.
+### Data Preparation and Index Construction
 
 ``` r
 options(dplyr.summarise.inform = FALSE)
 
-library(tidyverse)
-library(lubridate)
-library(tbl2xts)
-library(PerformanceAnalytics)
-library(RcppRoll)
-library(fmxdat)   # for safe_month_min, theme_fmx, fmx_cols, fmx_fills etc
-
-# Start from your data
-# Hold_Rets has: date, Tickers, Return, Weight, Group, Sector
-
+# Filter data for the past decade and main size groups
 Hold_Rets_decade <- 
   Hold_Rets %>% 
-  filter(Group %in% c("Small_Caps", "Large_Caps")) %>% 
-  mutate(year = year(date)) %>% 
-  filter(year >= max(year) - 9) %>%   # last 10 calendar years
-  select(-year)
-```
+  filter(Group %in% c("Small_Caps", "Mid_Caps", "Large_Caps","Unclassified")) %>% 
+  mutate(year = year(date))
 
-``` r
-# 1a. Daily value-weighted size index returns (Small vs Large)
+# Construct daily value-weighted size index returns
 idx_daily <- 
   Hold_Rets_decade %>% 
   group_by(date, Group) %>% 
@@ -334,10 +331,10 @@ idx_daily <-
     ret = sum(Weight * Return, na.rm = TRUE) / sum(Weight, na.rm = TRUE),
     .groups = "drop"
   ) %>% 
-  rename(Tickers = Group) %>%      # so Tickers is "Small_Caps" / "Large_Caps"
+  rename(Tickers = Group) %>%      # so Tickers is "all groups"
   arrange(Tickers, date)
 
-# 1b. Make returns monthly for illustration (Nico style)
+# Convert to monthly returns
 idx <- 
   idx_daily %>% 
   mutate(YM = format(date, "%Y%B")) %>% 
@@ -357,21 +354,20 @@ head(idx)
     ## # A tibble: 6 × 4
     ##   Tickers    YM           date            ret
     ##   <chr>      <chr>        <date>        <dbl>
-    ## 1 Large_Caps 2016January  2016-01-29 -0.0239 
-    ## 2 Large_Caps 2016February 2016-02-29 -0.00781
-    ## 3 Large_Caps 2016March    2016-03-31  0.0805 
-    ## 4 Large_Caps 2016April    2016-04-29  0.00591
-    ## 5 Large_Caps 2016May      2016-05-31  0.0159 
-    ## 6 Large_Caps 2016June     2016-06-30 -0.0174
+    ## 1 Large_Caps 2015January  2015-01-30  0.0366 
+    ## 2 Large_Caps 2015February 2015-02-27  0.0234 
+    ## 3 Large_Caps 2015March    2015-03-31  0.00479
+    ## 4 Large_Caps 2015April    2015-04-30  0.0498 
+    ## 5 Large_Caps 2015May      2015-05-29 -0.0530 
+    ## 6 Large_Caps 2015June     2015-06-30  0.0161
+
+\###Performance Analysis - Returns
 
 ``` r
-#======================
-# Manual Calculation:
-#======================
-
+# Prepare data for multi-horizon performance measures
 dfplot <- 
   bind_rows(
-    # 6 months – do NOT annualise (same as Nico)
+    # 6 months - do NOT annualise 
     idx %>% 
       filter(date >= fmxdat::safe_month_min(last(date), N = 6)) %>% 
       group_by(Tickers) %>% 
@@ -400,25 +396,7 @@ dfplot <-
       mutate(Freq = "D")
   )
 
-#======================
-# PerformanceAnalytics check
-#======================
-
-idxxts <- 
-  tbl_xts(idx, cols_to_xts = ret, spread_by = Tickers)
-
-dfplotxts <- 
-  bind_rows(
-    idxxts %>% tail(6)  %>% Return.annualized(scale = 12) %>% data.frame() %>% mutate(Freq = "A"),
-    idxxts %>% tail(12) %>% Return.annualized(scale = 12) %>% data.frame() %>% mutate(Freq = "B"),
-    idxxts %>% tail(36) %>% Return.annualized(scale = 12) %>% data.frame() %>% mutate(Freq = "C"),
-    idxxts %>% tail(60) %>% Return.annualized(scale = 12) %>% data.frame() %>% mutate(Freq = "D")
-  ) %>% 
-  data.frame() %>% 
-  tidyr::gather(Tickers, mu, -Freq) %>% 
-  mutate(Tickers = gsub("\\.", " ", Tickers))
-
-# Facet labels
+# Visualization functions and plots
 to_string <- as_labeller(c(
   `A` = "6 Months", 
   `B` = "1 Year", 
@@ -426,7 +404,7 @@ to_string <- as_labeller(c(
   `D` = "5 Years"
 ))
 
-# Barplot_foo (same style)
+# Annualized returns bar plot
 g_ann <- 
   dfplot %>% 
   ggplot() + 
@@ -467,9 +445,10 @@ g_ann <-
 g_ann
 ```
 
-![](README_files/figure-gfm/unnamed-chunk-7-1.png)<!-- -->
+![](README_files/figure-gfm/performance-analysis-Q2-1.png)<!-- -->
 
 ``` r
+# Cumulative returns plots
 gg_cum <- 
   idx %>% 
   arrange(date) %>% 
@@ -481,10 +460,17 @@ gg_cum <-
   ungroup() %>% 
   ggplot() +
   geom_line(aes(date, CP, colour = Tickers)) +
+  scale_colour_manual(
+    values = c(
+      "Large_Caps"   = "#1f77b4",
+      "Mid_Caps"     = "#2ca02c",
+      "Small_Caps"   = "#d62728",
+      "Unclassified" = "grey40"
+    )) +
   labs(
-    title   = "Illustration of Cumulative Returns of Large vs Small Caps",
-    subtitle = "",
-    caption = "Note:\nDistortions emerge as starting dates differ."
+    title    = "Cumulative Returns by Cap Size Group",
+    subtitle = "Growth of 1 rand invested in each group (rebased to 1 at first observation)",
+    caption  = "Note: Each size cap is normalised to 1 at its first observation."
   ) +
   theme_fmx(
     title.size    = ggpts(30),
@@ -493,11 +479,10 @@ gg_cum <-
     CustomCaption = TRUE
   )
 
-# Level plot
 gg_cum
 ```
 
-![](README_files/figure-gfm/unnamed-chunk-8-1.png)<!-- -->
+![](README_files/figure-gfm/performance-analysis-Q2-2.png)<!-- -->
 
 ``` r
 # Log cumulative plot
@@ -512,9 +497,12 @@ gg_cum_log <-
 gg_cum_log
 ```
 
-![](README_files/figure-gfm/unnamed-chunk-8-2.png)<!-- -->
+![](README_files/figure-gfm/performance-analysis-Q2-3.png)<!-- -->
+
+### Volatility Analysis
 
 ``` r
+# Rolling returns analysis
 plotdf <- 
   idx %>% 
   group_by(Tickers) %>% 
@@ -530,11 +518,11 @@ g_roll <-
   ggplot() +
   geom_line(aes(date, RollRets, colour = Tickers), alpha = 0.7, size = 1.25) +
   labs(
-    title   = "Rolling 3 Year Annualized Returns: Large vs Small Caps",
+    title   = "Rolling 3 Year Annualized Returns by Size",
     subtitle = "",
     x       = "",
     y       = "Rolling 3 year Returns (Ann.)",
-    caption = "Note:\nDistortions are not evident now."
+    caption = "."
   ) +
   theme_fmx(
     title.size    = ggpts(30),
@@ -548,28 +536,39 @@ finplot(g_roll, x.date.dist = "1 year", x.date.type = "%Y", x.vert = TRUE,
         y.pct = TRUE, y.pct_acc = 1)
 ```
 
-![](README_files/figure-gfm/unnamed-chunk-9-1.png)<!-- -->
-
-# This is the answer to the volatility question
+![](README_files/figure-gfm/volatility-analysis-Q2-1.png)<!-- -->
 
 ``` r
+# Volatility analysis - answer to the volatility question
 plot_dlog <- 
   idx %>% 
   group_by(Tickers) %>% 
-  # log monthly returns:
+  # 1. Convert simple monthly returns to log returns
   mutate(ret = log(1 + ret)) %>% 
-  # Rolling SD annualized calc now:
+  # 2. Rolling 36-month SD of log returns, annualised
   mutate(
     RollSD = RcppRoll::roll_sd(ret, 36, fill = NA, align = "right") * sqrt(12)
   ) %>% 
-  filter(!is.na(RollSD))
+  ungroup() %>% 
+  filter(!is.na(RollSD)) %>% 
+  # 3. Flag the "focus" buckets and relevel for nicer colours
+  mutate(
+    SizeBucket = if_else(Tickers %in% c("Small_Caps", "Large_Caps"),
+                         "focus", "other"),
+    Tickers    = forcats::fct_relevel(Tickers, "Small_Caps", "Large_Caps")
+  )
 
 g_sd <- 
   plot_dlog %>% 
   ggplot() +
-  geom_line(aes(date, RollSD, colour = Tickers), alpha = 0.7, size = 1.25) +
+  geom_line(
+    aes(date, RollSD, colour = Tickers, alpha = SizeBucket, size = SizeBucket)
+  ) +
+  # Make Small/Large bold, others dim
+  scale_alpha_manual(values = c(focus = 1,   other = 0.25), guide = "none") +
+  scale_size_manual( values = c(focus = 1.8, other = 0.7),   guide = "none") +
   labs(
-    title   = "Rolling 3 Year Annualized SD: Large vs Small Caps",
+    title   = "Rolling 3 Year Annualized SD by Size Bucket",
     subtitle = "",
     x       = "",
     y       = "Rolling 3 year SD (Ann.)",
@@ -587,7 +586,440 @@ finplot(g_sd, x.date.dist = "1 year", x.date.type = "%Y", x.vert = TRUE,
         y.pct = FALSE)
 ```
 
-![](README_files/figure-gfm/unnamed-chunk-10-1.png)<!-- -->
+![](README_files/figure-gfm/volatility-analysis-Q2-2.png)<!-- -->
+
+### Sector-Level Analysis
+
+``` r
+# Monthly value-weighted returns by Sector and Group (size)
+idx_sector_size <- 
+  Hold_Rets_decade %>% 
+  group_by(date, Sector, Group) %>% 
+  summarise(
+    ret = sum(Weight * Return, na.rm = TRUE) / sum(Weight, na.rm = TRUE),
+    .groups = "drop"
+  ) %>% 
+  mutate(YM = format(date, "%Y%B")) %>% 
+  arrange(date) %>% 
+  group_by(Sector, Group, YM) %>% 
+  summarise(
+    date = last(date),
+    ret  = prod(1 + ret, na.rm = TRUE) - 1,
+    .groups = "drop"
+  ) %>% 
+  arrange(Sector, Group, date)
+
+# Rolling returns analysis by sector and size
+plotdf_sector <- 
+  idx_sector_size %>% 
+  group_by(Sector, Group) %>% 
+  mutate(
+    RollRets = RcppRoll::roll_prod(1 + ret, 36, fill = NA, align = "right") ^ (12 / 36) - 1
+  ) %>% 
+  group_by(date) %>% 
+  filter(any(!is.na(RollRets))) %>% 
+  ungroup()
+
+g_roll_sector <- 
+  plotdf_sector %>% 
+  ggplot() +
+  geom_line(aes(date, RollRets, colour = Group), alpha = 0.7, size = 1.25) +
+  facet_wrap(~ Sector, nrow = 2) +
+  labs(
+    title   = "Rolling 3 Year Annualized Returns by Size and Sector",
+    subtitle = "",
+    x       = "",
+    y       = "Rolling 3 year Returns (Ann.)",
+    caption = "."
+  ) +
+  theme_fmx(
+    title.size    = ggpts(30),
+    subtitle.size = ggpts(5),
+    caption.size  = ggpts(25),
+    CustomCaption = TRUE
+  ) +
+  fmx_cols()
+
+finplot(g_roll_sector, x.date.dist = "1 year", x.date.type = "%Y", x.vert = TRUE,
+        y.pct = TRUE, y.pct_acc = 1)
+```
+
+![](README_files/figure-gfm/sector-analysis-Q2-1.png)<!-- -->
+
+``` r
+# Sector-level volatility analysis
+plot_sd_sector <- 
+  Hold_Rets_decade %>%
+  # value-weighted daily returns per Sector × Size Group
+  group_by(date, Sector, Group) %>%
+  summarise(
+    ret = sum(Weight * Return, na.rm = TRUE) / sum(Weight, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(YM = format(date, "%Y%B")) %>%
+  arrange(Sector, Group, date) %>%
+  # collapse to month-end and compute monthly returns
+  group_by(Sector, Group, YM) %>%
+  summarise(
+    date = last(date),
+    ret  = prod(1 + ret, na.rm = TRUE) - 1,
+    .groups = "drop"
+  ) %>%
+  arrange(Sector, Group, date) %>%
+  group_by(Sector, Group) %>%
+  # log monthly returns and rolling 36-month SD, annualised
+  mutate(
+    ret_log = log1p(ret),
+    RollSD  = RcppRoll::roll_sd(ret_log, 36, fill = NA, align = "right") * sqrt(12)
+  ) %>%
+  ungroup() %>%
+  filter(!is.na(RollSD))
+
+g_sd_sector <- 
+  plot_sd_sector %>%
+  ggplot() +
+  geom_line(aes(date, RollSD, colour = Group), size = 1.3, alpha = 0.9) +
+  facet_wrap(~ Sector, nrow = 2) +
+  labs(
+    title   = "Rolling 3 Year Annualised SD by Size and Sector",
+    subtitle = "",
+    x       = "",
+    y       = "Rolling 3-year SD (Ann.)"
+  ) +
+  theme_fmx(
+    title.size    = ggpts(30),
+    subtitle.size = ggpts(5)
+  ) +
+  fmx_cols()
+
+finplot(
+  g_sd_sector,
+  x.date.dist = "1 year",
+  x.date.type = "%Y",
+  x.vert      = TRUE,
+  y.pct       = FALSE
+)
+```
+
+![](README_files/figure-gfm/sector-analysis-Q2-2.png)<!-- -->
+
+``` r
+# Cumulative returns by sector and size
+idx_sector_size_cum <- 
+  idx_sector_size %>% 
+  arrange(Sector, Group, date) %>% 
+  group_by(Sector, Group) %>% 
+  mutate(
+    Rets = coalesce(ret, 0),
+    CP   = cumprod(1 + Rets)
+  ) %>% 
+  ungroup()
+
+gg_cum_sector <- 
+  idx_sector_size_cum %>% 
+  ggplot() +
+  geom_line(aes(date, CP, colour = Group)) +
+  facet_wrap(~ Sector, nrow = 2) +
+  labs(
+    title    = "Cumulative Returns by Sector and Size Group",
+    subtitle = "Growth of 1 rand invested in each sector-size group (rebased to 1 at first observation)",
+    caption  = "Note: Each sector-size group is normalised to 1 at its first observation."
+  ) +
+  theme_fmx(
+    title.size    = ggpts(30),
+    subtitle.size = ggpts(5),
+    caption.size  = ggpts(25),
+    CustomCaption = TRUE
+  ) +
+  fmx_cols()
+
+gg_cum_sector
+```
+
+![](README_files/figure-gfm/sector-analysis-Q2-3.png)<!-- -->
+
+``` r
+# Log cumulative plot by sector
+gg_cum_sector_log <- 
+  gg_cum_sector +
+  coord_trans(y = "log10") +
+  labs(
+    title = paste0(gg_cum_sector$labels$title, "\nLog Scaled"),
+    y     = "Log Scaled Cumulative Returns"
+  )
+
+gg_cum_sector_log
+```
+
+![](README_files/figure-gfm/sector-analysis-Q2-4.png)<!-- -->
+
+### Drawdown Analysis
+
+``` r
+# Convert to xts for PerformanceAnalytics
+idxxts <- 
+  idx %>% 
+  filter(Tickers != "Unclassified") %>% 
+  tbl_xts(cols_to_xts = ret, spread_by = Tickers)
+
+# Main drawdown chart
+chart.Drawdown(
+  idxxts[, c("Large_Caps", "Mid_Caps", "Small_Caps")],
+  geometric  = TRUE,
+  legend.loc = "bottomleft",
+  colorset   = 1:3,
+  lwd        = 3,
+  main       = "Peak to trough drawdowns by size group",
+  ylab       = "Drawdown from peak"
+)
+```
+
+![](README_files/figure-gfm/drawdown-analysis-Q2-1.png)<!-- -->
+
+``` r
+# Sector drawdowns
+draw_sector_dd <- function(sec) {
+  
+  groups_to_plot <- c("Large_Caps", "Mid_Caps", "Small_Caps")
+  
+  sec_xts <- 
+    idx_sector_size %>% 
+    filter(
+      Sector == sec,
+      Group %in% groups_to_plot    # drop Unclassified
+    ) %>% 
+    select(date, Group, ret) %>% 
+    tbl_xts(cols_to_xts = ret, spread_by = Group)
+  
+  # Only use the groups that actually exist for this sector
+  avail_groups <- intersect(groups_to_plot, colnames(sec_xts))
+  
+  chart.Drawdown(
+    sec_xts[, avail_groups],
+    geometric  = TRUE,
+    legend.loc = "bottomleft",
+    colorset   = 1:length(avail_groups),
+    lwd        = 4,
+    main       = paste("Drawdowns by size -", sec),
+    ylab       = "Drawdown from peak"
+  )
+}
+
+# Individual sector drawdown charts
+draw_sector_dd("Industrials")
+```
+
+![](README_files/figure-gfm/drawdown-analysis-Q2-2.png)<!-- -->
+
+``` r
+draw_sector_dd("Resources")
+```
+
+![](README_files/figure-gfm/drawdown-analysis-Q2-3.png)<!-- -->
+
+``` r
+draw_sector_dd("Financials")
+```
+
+![](README_files/figure-gfm/drawdown-analysis-Q2-4.png)<!-- -->
+
+``` r
+draw_sector_dd("Property")
+```
+
+![](README_files/figure-gfm/drawdown-analysis-Q2-5.png)<!-- -->
+
+### Statistical Analysis Tables
+
+``` r
+# Time series chart of sector returns using PerformanceAnalytics
+sector_xts <- 
+  idx_sector_size %>% 
+  filter(Group %in% c("Large_Caps", "Mid_Caps", "Small_Caps")) %>% 
+  select(date, Sector, Group, ret) %>% 
+  mutate(Sector_Group = paste(Sector, Group, sep = "_")) %>% 
+  select(-Sector, -Group) %>% 
+  tbl_xts(cols_to_xts = ret, spread_by = Sector_Group)
+
+# Chart time series of selected sector-size combinations
+chart.TimeSeries(
+  sector_xts[, c("Industrials_Large_Caps", "Resources_Large_Caps", "Financials_Large_Caps")],
+  main = "Large Cap Returns by Sector",
+  legend.loc = "topright",
+  colorset = 1:3,
+  lwd = 2,
+  ylab = "Monthly Returns"
+)
+```
+
+![](README_files/figure-gfm/statistical-tables-Q2-1.png)<!-- -->
+
+``` r
+# Drawdown analysis tables
+drawdown_results <- table.Drawdowns(sector_xts[, 1:6])
+drawdown_results
+```
+
+    ##         From     Trough         To   Depth Length To Trough Recovery
+    ## 1 2018-03-29 2020-03-31 2022-02-28 -0.4448     48        25       23
+    ## 2 2022-04-29 2022-09-30 2023-07-31 -0.2160     16         6       10
+    ## 3 2015-05-29 2016-02-29 2017-11-30 -0.2059     31        10       21
+    ## 4 2024-01-31 2024-03-28 2024-06-28 -0.0855      6         3        3
+    ## 5 2023-08-31 2023-10-31 2023-11-30 -0.0686      4         3        1
+
+``` r
+# Maximum drawdown by sector-size
+max_drawdowns <- maxDrawdown(sector_xts)
+max_drawdowns
+```
+
+    ##                Financials_Large_Caps Financials_Mid_Caps Financials_Small_Caps
+    ## Worst Drawdown             0.4447527           0.4130429             0.2070419
+    ##                Industrials_Large_Caps Industrials_Mid_Caps
+    ## Worst Drawdown              0.2774933            0.4165201
+    ##                Industrials_Small_Caps Property_Large_Caps Property_Mid_Caps
+    ## Worst Drawdown              0.5202237           0.5921244         0.6755921
+    ##                Property_Small_Caps Resources_Large_Caps Resources_Mid_Caps
+    ## Worst Drawdown           0.5086481            0.3928315          0.4160037
+    ##                Resources_Small_Caps
+    ## Worst Drawdown            0.3555768
+
+``` r
+# Detailed drawdown analysis
+detailed_drawdowns <- table.Drawdowns(sector_xts[, 1:6])
+detailed_drawdowns
+```
+
+    ##         From     Trough         To   Depth Length To Trough Recovery
+    ## 1 2018-03-29 2020-03-31 2022-02-28 -0.4448     48        25       23
+    ## 2 2022-04-29 2022-09-30 2023-07-31 -0.2160     16         6       10
+    ## 3 2015-05-29 2016-02-29 2017-11-30 -0.2059     31        10       21
+    ## 4 2024-01-31 2024-03-28 2024-06-28 -0.0855      6         3        3
+    ## 5 2023-08-31 2023-10-31 2023-11-30 -0.0686      4         3        1
+
+``` r
+# Downside risk table
+downside_risk <- table.DownsideRisk(sector_xts[, 1:6])
+downside_risk
+```
+
+    ##                              Financials_Large_Caps Financials_Mid_Caps
+    ## Semi Deviation                              0.0457              0.0354
+    ## Gain Deviation                              0.0445              0.0325
+    ## Loss Deviation                              0.0436              0.0308
+    ## Downside Deviation (MAR=10%)                0.0454              0.0351
+    ## Downside Deviation (Rf=0%)                  0.0413              0.0308
+    ## Downside Deviation (0%)                     0.0413              0.0308
+    ## Maximum Drawdown                            0.4448              0.4130
+    ## Historical VaR (95%)                       -0.0751             -0.0629
+    ## Historical ES (95%)                        -0.1231             -0.1007
+    ## Modified VaR (95%)                         -0.1000             -0.0732
+    ## Modified ES (95%)                          -0.1726             -0.1023
+    ##                              Financials_Small_Caps Industrials_Large_Caps
+    ## Semi Deviation                              0.0317                 0.0294
+    ## Gain Deviation                              0.0296                 0.0317
+    ## Loss Deviation                              0.0259                 0.0243
+    ## Downside Deviation (MAR=10%)                0.0300                 0.0298
+    ## Downside Deviation (Rf=0%)                  0.0257                 0.0253
+    ## Downside Deviation (0%)                     0.0257                 0.0253
+    ## Maximum Drawdown                            0.2070                 0.2775
+    ## Historical VaR (95%)                       -0.0642                -0.0638
+    ## Historical ES (95%)                        -0.0801                -0.0738
+    ## Modified VaR (95%)                         -0.0616                -0.0560
+    ## Modified ES (95%)                          -0.0809                -0.0700
+    ##                              Industrials_Mid_Caps Industrials_Small_Caps
+    ## Semi Deviation                             0.0314                 0.0347
+    ## Gain Deviation                             0.0281                 0.0292
+    ## Loss Deviation                             0.0275                 0.0338
+    ## Downside Deviation (MAR=10%)               0.0347                 0.0366
+    ## Downside Deviation (Rf=0%)                 0.0299                 0.0323
+    ## Downside Deviation (0%)                    0.0299                 0.0323
+    ## Maximum Drawdown                           0.4165                 0.5202
+    ## Historical VaR (95%)                      -0.0575                -0.0675
+    ## Historical ES (95%)                       -0.0937                -0.1016
+    ## Modified VaR (95%)                        -0.0703                -0.0763
+    ## Modified ES (95%)                         -0.0937                -0.1294
+
+``` r
+# Find and sort drawdowns for specific sectors
+industrials_drawdowns <- findDrawdowns(sector_xts[, "Industrials_Large_Caps"])
+sorted_industrials <- sortDrawdowns(industrials_drawdowns)
+sorted_industrials
+```
+
+    ## $return
+    ##  [1] -0.277493251 -0.173796862 -0.162208748 -0.129874738 -0.059516497
+    ##  [6] -0.054595909 -0.048139103 -0.040864546 -0.040428492 -0.017273312
+    ## [11] -0.010175129 -0.005677346  0.000000000  0.000000000  0.000000000
+    ## [16]  0.000000000  0.000000000  0.000000000  0.000000000  0.000000000
+    ## [21]  0.000000000  0.000000000  0.000000000  0.000000000  0.000000000
+    ## 
+    ## $from
+    ##  [1]  36  86 104  18   5 101  12  30 118  99  33  16   1  10  15  17  29  32  34
+    ## [20]  83  97 100 102 116 121
+    ## 
+    ## $trough
+    ##  [1]  47  88 106  23   8 101  14  30 119  99  33  16   1  10  15  17  29  32  34
+    ## [20]  83  97 100 102 116 121
+    ## 
+    ## $to
+    ##  [1]  83  97 116  29  10 102  15  32 121 100  34  17   5  12  16  18  30  33  36
+    ## [20]  86  99 101 104 118 130
+    ## 
+    ## $length
+    ##  [1] 48 12 13 12  6  2  4  3  4  2  2  2  5  3  2  2  2  2  3  4  3  2  3  3 10
+    ## 
+    ## $peaktotrough
+    ##  [1] 12  3  3  6  4  1  3  1  2  1  1  1  1  1  1  1  1  1  1  1  1  1  1  1  1
+    ## 
+    ## $recovery
+    ##  [1] 36  9 10  6  2  1  1  2  2  1  1  1  4  2  1  1  1  1  2  3  2  1  2  2  9
+
+``` r
+# Resources sector drawdown analysis
+resources_drawdowns <- findDrawdowns(sector_xts[, "Resources_Large_Caps"])
+sorted_resources <- sortDrawdowns(resources_drawdowns)
+sorted_resources
+```
+
+    ## $return
+    ##  [1] -0.3928315176 -0.3102618051 -0.2901315894 -0.1577190631 -0.1340912825
+    ##  [6] -0.0966539907 -0.0821752815 -0.0187102154 -0.0008906932  0.0000000000
+    ## [11]  0.0000000000  0.0000000000  0.0000000000  0.0000000000  0.0000000000
+    ## [16]  0.0000000000  0.0000000000  0.0000000000
+    ## 
+    ## $from
+    ##  [1]  45  87   5  68  80  77   3   1  43   2   4  41  44  67  72  79  83 127
+    ## 
+    ## $trough
+    ##  [1]  63 110  13  70  81  78   3   1  43   2   4  41  44  67  72  79  83 127
+    ## 
+    ## $to
+    ##  [1]  67 127  41  72  83  79   4   2  44   3   5  43  45  68  77  80  87 130
+    ## 
+    ## $length
+    ##  [1] 23 41 37  5  4  3  2  2  2  2  2  3  2  2  6  2  5  4
+    ## 
+    ## $peaktotrough
+    ##  [1] 19 24  9  3  2  2  1  1  1  1  1  1  1  1  1  1  1  1
+    ## 
+    ## $recovery
+    ##  [1]  4 17 28  2  2  1  1  1  1  1  1  2  1  1  5  1  4  3
+
+### Conclusion
+
+Using a Rolling 3-year annualized standard deviations consistently show
+that Small Caps exhibit higher return variability across all sectors,
+with particularly sharp spikes during periods of market stress like
+2020. Peak-to-trough drawdown analysis further confirms this: Small and
+Mid Caps experience deeper and more frequent drawdowns than Large Caps,
+especially in sectors like Industrials and Property, where Mid Caps saw
+losses exceeding 65%. Interestingly, while Large Caps are more stable,
+they are not immune to prolonged drawdowns, such as the 48-month decline
+in Financials from 2018 to 2022. These findings highlight the importance
+of size and sector in understanding risk dynamics and suggest that
+portfolio construction should account for both cyclical sensitivity and
+recovery behavior across market segments.
 
 Second part (peak and troughs )
 
@@ -979,7 +1411,7 @@ garchfit1
     ## 4    50     56.46       0.2162
     ## 
     ## 
-    ## Elapsed time : 0.1826301
+    ## Elapsed time : 0.1694539
 
 ``` r
 garch_tab <- garchfit1@fit$matcoef
@@ -1669,7 +2101,7 @@ chart.StackedBar(
 )
 ```
 
-![](README_files/figure-gfm/unnamed-chunk-16-1.png)<!-- -->
+![](README_files/figure-gfm/unnamed-chunk-10-1.png)<!-- -->
 
 ``` r
 # StackBar of monthly weights (Note the stand-out rebalance weights...):
@@ -1713,4 +2145,4 @@ plot(hc, which.plot = 2, main = "Hierarchical clustering of global indices",
      xlab = "", sub = "")
 ```
 
-![](README_files/figure-gfm/unnamed-chunk-17-1.png)<!-- -->
+![](README_files/figure-gfm/unnamed-chunk-11-1.png)<!-- -->

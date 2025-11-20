@@ -1,1364 +1,564 @@
 ---
+title: "Q2"
 output: html_document
-editor_options: 
-  chunk_output_type: console
 ---
 
-# Financial Econometrics 871 Practical Exam
+To answer the first part of Question 2 on whether smaller stocks are more volatile than larger stocks, I focus on the last decade(2015-2024) of daily returns and compare volatility across size groups(Small , Mid , Large Caps). I work with the `Hold_Rets_Sectors` data set, which contains daily returns, holdings weights, size group (`Group`) and sector labels for JSE stocks.
 
-**SU Number:** 22660348  
-**Author:** Precious Nhamo  
-**Course:** Financial Econometrics 871  
-**Dates:** 18–19 November 2025
+In the lecturer's notes, volatility (risk) is defined and measured using the standard deviation of returns, and it is emphasised that:
 
+* Standard deviation should be annualised when comparing different time periods.
+* The usual shortcut ( \text{SD} \times \sqrt{12} ) is only theoretically correct when using **logarithmic** returns, because annual log return is the sum of monthly log returns.
 
+I proceed as follows:
 
----
+1. I construct value weighted indices for each size group (Small Caps, Mid Caps and Large Caps).
+2. I convert their monthly simple returns to log returns using (\log(1 + r)).
+3. I compute a 36-month rolling standard deviation of these monthly log returns.
+4. I annualise this rolling standard deviation by multiplying by (\sqrt{12}).
 
-## Table of Contents
+This yields a rolling annualised standard deviation of returns for each size group .If the Small Cap series has a consistently higher annualised standard deviation, I can conclude that smaller stocks have been more volatile than larger stocks locally.
 
-<details>
-<summary>Core document sections</summary>
+### Load libraries and raw data
 
-Project overview
-Computational environment and setup
-Repository structure
-General replication workflow
-Question by question reproducibility and thinking process
-
-</details>
-
-<details>
-<summary>Question 1: Portfolio return comparison</summary>
-
-Aim of the question
-Data and variables
-Conceptual and econometric approach
-Thinking process and steps followed
-Implementation and how to run the code
-Outputs
-Theoretical results and references
-
-</details>
-
-<details>
-<summary>Question 2: Peaks and troughs</summary>
-
-Aim of the question
-Data and variables
-Conceptual and econometric approach
-Thinking process and steps followed
-Implementation and how to run the code
-Outputs
-Theoretical results and references
-
-</details>
-
-<details>
-<summary>Question 3: Momentum</summary>
-
-Aim of the question
-Data and variables
-Conceptual and econometric approach
-Thinking process and steps followed
-Implementation and how to run the code
-Outputs
-Theoretical results and references
-
-</details>
-
-<details>
-<summary>Question 4: Volatility and GARCH estimates</summary>
-
-Aim of the question
-Data and variables
-Conceptual and econometric approach
-Thinking process and steps followed
-Implementation and how to run the code
-Outputs
-Theoretical results and references
-
-</details>
-
-<details>
-<summary>Question 5: Portfolio construction</summary>
-
-Aim of the question
-Data and variables
-Conceptual and econometric approach
-Thinking process and steps followed
-Implementation and how to run the code
-Outputs
-Theoretical results and references
-
-</details>
-
----
-
-## 1. Project overview
-
-This repository contains my practical examination submission for the Financial Econometrics 871 course. The assessment consists of five core questions, each of which requires the application of quantitative methods to real financial data in order to answer a practical, economically meaningful problem:
-
-Question 1 focuses on portfolio returns and peer comparison for an active fund manager.
-
-Question 2 investigates peak to trough behaviour and volatility patterns across firm size groups and sectors.
-
-Question 3 studies the performance of a momentum signal and relates it to an actual local equity fund.
-
-Question 4 analyses currency volatility and the relationship between the rand, carry, valuation and global risk sentiment using GARCH style measures.
-
-Question 5 constructs and evaluates a global balanced index style portfolio subject to realistic constraints.
-
-Across all questions, the aim is to demonstrate a clear, reproducible and well documented workflow in R. For each question I:
-
-1. State the aim and context in plain language.
-2. Describe the data used and transformations applied.
-3. Explain the conceptual and econometric choices made.
-4. Record the step by step thinking process.
-5. Point to the scripts that implement the analysis.
-6. Summarise the main outputs and how they answer the question.
-7. Link back to the core theory and references used.
-
-This README is the only document that is graded for structure and explanation. No additional READMEs are used inside the question folders.
-
----
-
-## 2. Computational environment and setup
-
-### 2.1 Software and versions
-
-R version: [insert R version used, for example 4.4.1]
-Integrated development environment: [for example RStudio [insert version]]
-Operating system: [for example Windows 10 / macOS Sonoma / Ubuntu 22.04]
-
-Key R packages used across questions include, among others:
-
-tidyverse for data wrangling and plotting.
-PerformanceAnalytics for portfolio and risk measures.
-lubridate and related packages for date handling.
-rugarch and rmgarch for univariate and multivariate GARCH modelling where relevant.
-MTS or similar time series packages where needed.
-
-Any additional packages used are documented in the code comments for each question and briefly mentioned in the relevant question section below.
-
-### 2.2 Randomness and seeds
-
-Wherever simulations, random portfolios or resampling procedures are used, I fix a random seed at the start of the main script for that question using set.seed([insert seed value]).
-
-The seed value used for each question is stated explicitly in that question’s section under “Implementation and how to run the code” so that stochastic results can be reproduced exactly.
-
-### 2.3 Project and data setup (lecturer instructions)
-
-The project folder with my student number as the root (22660348) follows the structure provided by the lecturer. The setup steps were as follows:
-
-1. Create the root project folder (for example on the desktop) and initialise an R project there.
-2. Download the official folder structure archive supplied for the 2025 exam and use it as the basis for the subfolders.
-3. Download the exam data archive supplied for the 2025 exam and extract all data files into the data folder as specified by the lecturer.
-4. Ensure that all data folders are listed in the .gitignore file so that no raw data are committed to version control.
-5. For each question, create a separate question folder using the Texevier helper functions, so that code, data and output are neatly organised.
-6. Ensure that this root README is kept up to date, and that no READMEs are stored within individual question folders.
-
----
-
-## 3. Repository structure
-
-<<<<<<< HEAD
-The repository is organised by question. Each question (Q1 to Q5) has its own folder with a consistent internal structure. The only README in the project is this file at the root level.
-=======
-The project is organised by question. Each question Q1 to Q5 has its own folder with a consistent internal layout. Within each question folder there are subfolders for code, data and outputs.
->>>>>>> e8f9c0f8dde4d7b475a8d57f9309773761408aaa
-
-A schematic folder layout is as follows. The exact names of the top level question folders may follow the Texevier template (for example “Q1” or “Question1”), but the internal structure for each is consistent.
-
-```text
-22660348/
-│
-├── Q1/
-│   ├── code/          R scripts and functions for Question 1
-│   ├── data/          Raw and pre processed data used for Question 1
-│   └── output/
-│       ├── plots/     Figures for Question 1 (for example time series, scatterplots, boxplots)
-│       └── results/   Tables, model summaries and other numerical results for Question 1
-│
-├── Q2/
-│   ├── code/
-│   ├── data/
-│   └── output/
-│       ├── plots/
-│       └── results/
-│
-├── Q3/
-│   ├── code/
-│   ├── data/
-│   └── output/
-│       ├── plots/
-│       └── results/
-│
-├── Q4/
-│   ├── code/
-│   ├── data/
-│   └── output/
-│       ├── plots/
-│       └── results/
-│
-├── Q5/
-│   ├── code/
-│   ├── data/
-│   └── output/
-│       ├── plots/
-│       └── results/
-│
-└── README.md          This document
-
-```
-
-Where relevant, additional subfolders can be added inside code or output (for example “functions” under code, or “diagnostics” under output), but the basic pattern above is maintained so that the examiner can easily navigate the project.
-
----
-
-## 4. General replication workflow
-
-To replicate the analysis for any question Qk, with k from 1 to 5, the general steps are:
-
-1. Open the R project associated with the root folder 22660348.
-
-2. Ensure that all required packages for that question are installed. Any non standard packages are mentioned in the relevant question section and in the header of the main script.
-
-3. Confirm that the data folder for that question contains the required data files as described under “Data and variables” for that question.
-
-4. Run the main script for that question from the project root. In this README I refer to these as Q1_main.R, Q2_main.R and so on, located in the appropriate code subfolder. Each main script is designed to:
-
-   a. Load the required libraries.
-   b. Import the data from the corresponding data subfolder.
-   c. Perform any necessary cleaning and transformation of the data.
-   d. Implement the econometric analysis and calculations described in this README.
-   e. Save all plots and tables to the relevant output subfolders for that question.
-
-5. After running the main script, inspect the plots in the output/plots subfolder and the tables or text files in the output/results subfolder for that question. These outputs correspond to the results discussed in this README and used to answer the exam questions.
-
-Any additional helper scripts or functions are documented under “Implementation and how to run the code” for the relevant question.
-
----
-
-## 5. Question by question reproducibility and thinking process
-
-The following subsections provide a template for each exam question. For each question I fill in:
-
-aim,
-data and variable definitions,
-conceptual and econometric choices,
-the stepwise thinking process,
-implementation details,
-a short description of outputs, and
-the main theoretical results and references relied upon.
-
-The structure is intentionally repeated so that the examiner can follow the same logic across all five questions.
-
----
-
-### Question 1: Portfolio return comparison
-
-First we inspect the provided dataset (long-time series , long panel time series and long time series)
-
-```{r load-data-Q1, echo = TRUE}
-# Load readr using pacman
-pacman::p_load(readr)
-
-# Load the data
-Benchmark <- read_rds("data/Capped_SWIX.rds")
-Active_Managers <- read_rds("data/Active_Managers.rds")
-ABC_Fund <- read_rds("data/ABC_Fund.rds")
-
-```
-
-
-
----
-
-## Data Overview — Portfolio Return Comparison
-
-This analysis uses three monthly return datasets to analyse peer performance and benchmark comparisons:
-
----
-
-### **1. `ABC_Fund`**
-- **Observations:** 160 monthly records (starting July 2012)
-- **Variables:**
-  - `date`: Monthly timestamps (e.g., `"2012-07-31"`)
-  - `Returns`: Numeric monthly return values (e.g., `0.03499`)
-  - `Name`: Constant label `"ABC_Fund"`
-- **Purpose:** Represents the performance of the focal fund under analysis. Used to assess relative performance, beta exposure, and dispersion sensitivity.
-
----
-
-### **2. `Active_Managers`**
-- **Observations:** 27,527 rows across multiple managers
-- **Structure:** Each row represents a manager’s return for a given month
-- **Variables:**
-  - `date`: Monthly timestamps (e.g., `"2005-11-30"`)
-  - `Returns`: Numeric monthly return values (e.g., `0.03199`)
-  - `Name`: Manager identifiers (e.g., `"A1"`, `"B2"`, `"C3"`, etc.)
-- **Purpose:** Provides a cross-section of peer fund returns for benchmarking and dispersion analysis.
-
----
-
-### **3. `Benchmark`**
-- **Observations:** 311 monthly records (starting December 1999)
-- **Variables:**
-  - `date`: Monthly timestamps (e.g., `"1999-12-31"`)
-  - `Name`: Constant label `"FTSE/JSE Capped SWIX"`
-  - `Returns`: Numeric monthly return values (e.g., `0.13111`)
-- **Purpose:** Serves as the industry benchmark index for evaluating fund and peer performance.
-
----
-
-
-
-
-**Short descriptive title:** Portfolio return comparison and peer analysis for ABC Fund
-
-#### 5.1.1 Aim of the question
-
-Summarise in words what this question is about. For example, the aim here is to compare the benchmark, a set of active managers and the ABC Fund in terms of return behaviour and risk, and to produce clear visual material that can be used in a conference presentation. This includes showing how ABC Fund differs from the industry in terms of beta, drivers of returns and performance during high dispersion periods.
-
-#### 5.1.2 Data and variables
-
-Data sets used (for example industry benchmark returns, active manager returns and ABC Fund returns) are stored in the data subfolder for Question 1.
-
-For each data set I record:
-
-Name and file location in the project.
-Sample period and frequency of the data (for example monthly or daily returns).
-Key variables used (for example benchmark index return, peer fund returns, ABC Fund returns).
-Any transformations applied (for example conversion to excess returns, rolling windows for betas, construction of dispersion measures).
-
-#### 5.1.3 Conceptual and econometric approach
-
-In this section I explain the main ideas that guide the analysis. For this question, that includes:
-
-How I measure and compare rolling beta across funds.
-How I characterise “something other than market beta” for ABC Fund (for example residual return behaviour, factor exposures or tracking error).
-How I define and measure market dispersion and how I relate it to ABC Fund’s relative performance.
-Which plots and summary statistics I use to communicate the story to a non quantitative audience.
-
-I briefly justify why each method is appropriate for the question and for the data provided.
-
-#### 5.1.4 Thinking process and steps followed
-
-Here I list the logical sequence of steps I followed, from exploratory analysis to final visuals. A typical sequence for this question might include:
-
-Exploratory plots of benchmark, peers and ABC Fund returns.
-Computation and plotting of rolling betas relative to the benchmark.
-Analysis of cross sectional dispersion across funds and how ABC Fund behaves in high dispersion periods.
-Construction of visuals that show relative performance through time in a clear way.
-
-The emphasis is on explaining why I did things in a particular order and how each step feeds into the next.
-
-#### 5.1.5 Implementation and how to run the code
-
-Main script for this question: stored in Q1/code, for example Q1_main.R.
-
-Purpose of the main script:
-
-Load packages and data.
-Create derived variables (rolling betas, dispersion measures and relative performance series).
-Generate all plots used for the manager’s presentation.
-Write any summary tables or statistics to the output/results subfolder.
-
-Any additional helper scripts (for example for plotting or repeated calculations) are also located in Q1/code and are briefly described here.
-
-To reproduce the results, open the project at the root folder, ensure the working directory is set to 22660348, and run the main script for Question 1.
-
-#### 5.1.6 Outputs
-
-Key outputs for this question are stored in Q1/output/plots and Q1/output/results.
-
-Plots include, for example:
-
-Rolling beta comparison across funds.
-Relative performance of ABC Fund versus peers over time.
-Visualisation of performance in high versus low dispersion environments.
-
-Results include, for example:
-
-Summary tables of betas, returns and dispersion statistics.
-Any numerical summaries discussed in the written answer.
-
-For each main output, I briefly state how it answers part of the manager’s request.
-
-#### 5.1.7 Theoretical results and references
-
-In this part I list the key definitions and results used, together with their sources. For example:
-
-Definition of beta and rolling beta estimation.
-Measures of cross sectional dispersion.
-Any portfolio statistics (for example tracking error, information ratio) used in my interpretation.
-
-I mention whether these come from lecture notes, standard textbooks or published articles, without reproducing full derivations.
-
----
-
-### Question 2: Peaks and troughs
-
-
-```{r load-data-Q2, echo = TRUE}
-# Load readr using pacman
-pacman::p_load(readr,DescTools)
-# Load the data
-Hold_Rets <- read_rds("data/Hold_Rets_Sectors.rds")
-```
-
-Winsorise to remove outliers 
-
-
-
-
-**Short descriptive title:** Peak to trough ranges and volatility across size and sector groups
-
-Volatility clustering 
-
-
-Weight and risk
-
-
-```
-#### 5.2.1 Aim of the question
-
-Here I state the purpose in plain language. For example, the aim is to explore whether smaller stocks are more volatile than larger stocks and to quantify typical peak to trough moves across size groups and sectors over recent years, using local daily holdings and returns data.
-
-#### 5.2.2 Data and variables
-
-I describe the holdings and returns data set used for this question, including:
-
-The file location in Q2/data.
-The time period and frequency of the data.
-How sector and size group labels are defined.
-How peak to trough measures are constructed (for example within each year for each stock or group).
-
-#### 5.2.3 Conceptual and econometric approach
-
-This section explains how I measure volatility and peak to trough movements and how I compare them across groups. I also mention any additional exploratory angles taken, such as comparing different subperiods or using alternative volatility measures.
-
-#### 5.2.4 Thinking process and steps followed
-
-I outline the steps taken, such as:
-
-Cleaning and merging holdings, returns, sectors and size groups.
-Computing yearly peak to trough ranges and volatility measures.
-Aggregating and comparing across groups.
-Producing tables and plots that reveal the patterns.
-
-#### 5.2.5 Implementation and how to run the code
-
-Main script located in Q2/code, for example Q2_main.R, which carries out the full analysis from data import to output creation. Any helper functions are stored in the same folder and briefly described here.
-
-#### 5.2.6 Outputs
-
-Plots and tables summarising peak to trough behaviour and volatility by size group and sector are stored in Q2/output/plots and Q2/output/results, with a short description of how each one informs the answer.
-
-#### 5.2.7 Theoretical results and references
-
-Definitions and properties of the volatility and range measures used are noted here, together with references to lecture material or textbooks.
-
----
-
-### Question 3: Momentum
-
-
-```{r load-data-Q3, echo = TRUE}
-# Load readr using pacman
-pacman::p_load(readr)
-
-
-# Load the data
-Port_Holds <- read_rds("data/Fund_Holds.rds")
-Hold_Rets <- read_rds("data/Hold_Rets_Sectors.rds")
-
-```
-
-**Short descriptive title:** Momentum as an investment signal and comparison with a local equity fund
-
-#### 5.3.1 Aim of the question
-
-The aim is to evaluate how well a chosen momentum signal has worked locally over the past decade and to compare the performance of a colleague’s long only fund with that signal. This includes examining the information coefficient, signal decay and quintile portfolio performance.
-
-#### 5.3.2 Data and variables
-
-I state which data sets are used (for example holdings and returns, fund holdings) and where they are stored under Q3/data. I define clearly:
-
-How the momentum signal is constructed.
-The horizon over which future returns are measured.
-How quintiles or other ranks are formed.
-
-#### 5.3.3 Conceptual and econometric approach
-
-This part explains:
-
-How I define and calculate the information coefficient.
-How I measure signal decay across future periods.
-How I form long minus short portfolios based on momentum quintiles.
-How I compare the colleague’s fund to the benchmark and to the momentum strategy.
-
-I also mention that the main results are reported using a Texevier style document as requested in the question.
-
-#### 5.3.4 Thinking process and steps followed
-
-I record the ordered steps taken, from choosing a momentum definition, through cleaning and aligning data, to computing ICs, decay profiles and portfolio returns.
-
-#### 5.3.5 Implementation and how to run the code
-
-The main script for this question is stored in Q3/code. It prepares the data, computes the signal, constructs the evaluation metrics and writes both numerical and Texevier output files to Q3/output. Any separate script that generates the Texevier report is noted here.
-
-#### 5.3.6 Outputs
-
-Outputs include:
-
-Texevier summary document explaining the momentum results.
-Plots of IC over time, signal decay and quintile performance.
-Tables of key statistics and fund versus momentum comparisons.
-
-#### 5.3.7 Theoretical results and references
-
-I list definitions of the information coefficient, signal decay and portfolio sorting procedures, with references to standard factor investing literature and the article used as inspiration where relevant.
-
----
-
-### Question 4: Volatility and GARCH estimates
-
-#### 5.4.1 Aim of the question
-
-- We are assessing whether the South African Rand (ZAR) has been one of the most volatile currency over the past few years.(since it says one of the most we assess it relative to other currencies)
-- ZAR has generally performed well during periods where the G10 currency carry trades have been favourable and currency valuations cheap ( we can split this for two and then do the joint )
-- Globally, it has been one of the currencies that most benefit during periods where the Dollar is comparatively strong,
- indicating a risk-on sentiment
-- Use your discretion on what you use to measure volatility, which currencies you compare
- and how you arrive at your conclusions. Be creative in using tables, graphs, stratification and
- statistics to argue your points.
-
-
-
-```{r load-data-Q4, echo = TRUE}
-
-# Load required packages using pacman (installs if missing)
+```{r load-data-Q2, echo = TRUE, message = FALSE, warning = FALSE}
+# Load required packages
 pacman::p_load(
-  readr,     # for reading .rds files 
-  tidyverse, # for data manipulation and visualization
-  rugarch,   # for GARCH modeling (volatility analysis)
-  lubridate, # for working with dates and times
-  tbl2xts,   # for converting tibbles to xts time series
-  zoo        # for time series infrastructure and manipulation
+  readr,
+  tidyverse,
+  lubridate,
+  tbl2xts,
+  PerformanceAnalytics,
+  rmsfuns,
+  fmxdat,
+  DescTools,
+  RcppRoll
 )
 
-# Source any helper functions for Q5
-list.files("Q5/code/", full.names = TRUE, recursive = TRUE) %>% 
-  .[grepl("\\.R$", .)] %>%     # Filter only .R script files
-  as.list() %>%                # Convert to list for walk()
-  walk(~ source(.x))           # Source each script (e.g., custom functions)
-
-# Load pre-processed data files (all relative to USD)
-cncy       <- read_rds("data/currencies.rds")     # Daily spot rates for G10 currencies
-cncy_Carry <- read_rds("data/cncy_Carry.rds")     # Deutsche Bank G10 Carry Index (DBHVG10U Index)
-cncy_value <- read_rds("data/cncy_value.rds")     # Deutsche Bank FX PPP Value Index (DBPPPUSF Index)
-cncyIV     <- read_rds("data/cncyIV.rds")         # Implied volatility (similar to VIX for currencies)
-bbdxy      <- read_rds("data/bbdxy.rds")          # Bloomberg Dollar Spot Index (BBDXY)
-
-
-
-```
-
-Volatility of ZAR 
-
-```{r}
-# This step calculates various volatility measures for currency returns
-# We use multiple measures because each captures different aspects of risk:
-# - Standard deviation (sd) is the most common symmetric volatility measure
-# - MAD is more robust to outliers than standard deviation
-# - Downside deviation focuses only on negative returns, which aligns with investor concerns about losses
-# - d-ratio provides a measure of return asymmetry
-
-# Lets start with the currency returns
-# Volatility of ZAR
-# Currency returns following lecturer's pattern
-cncy_rts <- cncy %>%  
-  group_by(Name) %>%  
-  arrange(date, .by_group = TRUE) %>%                 # ensure sorted
+# Load the holdings and returns data with sector and size group labels
+Hold_Rets <- read_rds("data/Hold_Rets_Sectors.rds") %>%
   mutate(
-    dlogret   = log(Price) - log(lag(Price)),
-    scaledret = dlogret - mean(dlogret, na.rm = TRUE)
+    # Make the size and sector groups explicit instead of leaving them as NA
+    Group  = if_else(is.na(Group),  "Unclassified", Group),
+    Sector = if_else(is.na(Sector), "Unclassified", Sector)
+  )
+
+head(Hold_Rets)
+```
+
+Here I explicitly rename `NA` groups to `"Unclassified"` so they do not silently disappear from the data. Later, when I compare volatility across size groups, I restrict the analysis to the proper size categories (Small_Caps, Mid_Caps, Large_Caps) and treat "Unclassified" separately if needed.
+
+### Data Preparation and Index Construction
+
+```{r prep-and-index-Q2, echo = TRUE}
+options(dplyr.summarise.inform = FALSE)
+
+# Filter data for the past decade and main size groups
+Hold_Rets_decade <- 
+  Hold_Rets %>% 
+  filter(Group %in% c("Small_Caps", "Mid_Caps", "Large_Caps","Unclassified")) %>% 
+  mutate(year = year(date))
+
+# Construct daily value-weighted size index returns
+idx_daily <- 
+  Hold_Rets_decade %>% 
+  group_by(date, Group) %>% 
+  summarise(
+    ret = sum(Weight * Return, na.rm = TRUE) / sum(Weight, na.rm = TRUE),
+    .groups = "drop"
   ) %>% 
-  filter(date > dplyr::first(date)) %>%               # drop first date per currency
-  ungroup() %>% 
-  mutate(Name = gsub("_Cncy", "", Name))
+  rename(Tickers = Group) %>%      # so Tickers is "all groups"
+  arrange(Tickers, date)
 
+# Convert to monthly returns
+idx <- 
+  idx_daily %>% 
+  mutate(YM = format(date, "%Y%B")) %>% 
+  arrange(date) %>% 
+  group_by(Tickers, YM) %>% 
+  # pick last date of the month and compute monthly return
+  summarise(
+    date = last(date),
+    ret  = prod(1 + ret, na.rm = TRUE) - 1,
+    .groups = "drop"
+  ) %>% 
+  arrange(Tickers, date)
 
-# Calculate multiple volatility measures over the past few years
-vol_cncy <- cncy_rts %>% 
-    filter(date > as.Date("2015-01-01")) %>%  # Filter for recent period
-    group_by(Name) %>%
-    summarize(
-        # Standard deviation - most commonly used measure due to mathematical properties
-        # and compatibility with normal distribution assumptions
-        std_dev = sd(dlogret, na.rm = TRUE),
-        
-        # Mean Absolute Deviation (MAD) - more robust to outliers than standard deviation
-        mad = mean(abs(dlogret - mean(dlogret, na.rm = TRUE)), na.rm = TRUE),
-        
-        # Downside deviation (semi-deviation) - only considers returns below zero
-        # More relevant for risk-averse investors who primarily care about losses
-        downside_dev = sqrt(mean(ifelse(dlogret < 0, dlogret^2, 0), na.rm = TRUE)),
-        
-        # d-ratio - measures asymmetry between upside and downside
-        # Values < 1 indicate more downside risk, values > 1 indicate more upside potential
-        d_ratio = (n() - sum(ifelse(dlogret < 0, dlogret, 0))) / 
-                  (n() + sum(ifelse(dlogret > 0, dlogret, 0)))
+head(idx)
+```
+
+### Performance Analysis and Visualization
+
+```{r performance-analysis-Q2, echo = TRUE}
+# Prepare data for multi-horizon performance measures
+dfplot <- 
+  bind_rows(
+    # 6 months - do NOT annualise 
+    idx %>% 
+      filter(date >= fmxdat::safe_month_min(last(date), N = 6)) %>% 
+      group_by(Tickers) %>% 
+      summarise(mu = prod(1 + ret, na.rm = TRUE) - 1) %>% 
+      mutate(Freq = "A"),
+    
+    # 1 year
+    idx %>% 
+      filter(date >= fmxdat::safe_month_min(last(date), N = 12)) %>% 
+      group_by(Tickers) %>% 
+      summarise(mu = prod(1 + ret, na.rm = TRUE) ^ (12 / 12) - 1) %>% 
+      mutate(Freq = "B"),
+    
+    # 3 years
+    idx %>% 
+      filter(date >= fmxdat::safe_month_min(last(date), N = 36)) %>% 
+      group_by(Tickers) %>% 
+      summarise(mu = prod(1 + ret, na.rm = TRUE) ^ (12 / 36) - 1) %>% 
+      mutate(Freq = "C"),
+    
+    # 5 years
+    idx %>% 
+      filter(date >= fmxdat::safe_month_min(last(date), N = 60)) %>% 
+      group_by(Tickers) %>% 
+      summarise(mu = prod(1 + ret, na.rm = TRUE) ^ (12 / 60) - 1) %>% 
+      mutate(Freq = "D")
+  )
+
+# Convert to xts for PerformanceAnalytics
+idxxts <- 
+  idx %>% 
+  filter(Tickers != "Unclassified") %>% 
+  tbl_xts(cols_to_xts = ret, spread_by = Tickers)
+
+# Alternative calculation using PerformanceAnalytics
+dfplotxts <- 
+  bind_rows(
+    idxxts %>% tail(6)  %>% Return.annualized(scale = 12) %>% data.frame() %>% mutate(Freq = "A"),
+    idxxts %>% tail(12) %>% Return.annualized(scale = 12) %>% data.frame() %>% mutate(Freq = "B"),
+    idxxts %>% tail(36) %>% Return.annualized(scale = 12) %>% data.frame() %>% mutate(Freq = "C"),
+    idxxts %>% tail(60) %>% Return.annualized(scale = 12) %>% data.frame() %>% mutate(Freq = "D")
+  ) %>% 
+  data.frame() %>% 
+  tidyr::gather(Tickers, mu, -Freq) %>% 
+  mutate(Tickers = gsub("\\.", " ", Tickers))
+
+# Visualization functions and plots
+to_string <- as_labeller(c(
+  `A` = "6 Months", 
+  `B` = "1 Year", 
+  `C` = "3 Years", 
+  `D` = "5 Years"
+))
+
+# Annualized returns bar plot
+g_ann <- 
+  dfplot %>% 
+  ggplot() + 
+  geom_bar(aes(Tickers, mu, fill = Tickers), stat = "identity") + 
+  facet_wrap(~Freq, labeller = to_string, nrow = 1) + 
+  labs(
+    x = "",
+    y = "Returns (Ann.)",
+    caption = "Note:\nReturns in excess of a year are in annualized terms."
+  ) + 
+  fmx_fills() + 
+  geom_label(
+    aes(Tickers, mu, label = paste0(round(mu, 4) * 100, "%")),
+    size = ggpts(8),
+    alpha = 0.35,
+    fontface = "bold",
+    nudge_y = 0.002
+  ) + 
+  theme_fmx(
+    CustomCaption = TRUE,
+    title.size = ggpts(43),
+    subtitle.size = ggpts(38),
+    caption.size = ggpts(30),
+    axis.size = ggpts(37),
+    legend.size = ggpts(35),
+    legend.pos = "top"
+  ) +
+  theme(
+    axis.text.x  = element_blank(),
+    axis.title.y = element_text(vjust = 2),
+    strip.text.x = element_text(
+      face   = "bold",
+      size   = ggpts(35),
+      margin = margin(.1, 0, .1, 0, "cm")
     )
+  )
 
-# Rank currencies by standard deviation (most common volatility measure)
-ranked_data <- vol_cncy %>%
-  mutate(rank = rank(-std_dev, na.last = "keep")) %>%  # Rank by standard deviation (descending)
-    arrange(rank) %>%  # Sort by rank
-    slice_head(n = 20)  # Keep top 20 most volatile currencies
+g_ann
 
-kableExtra::kable(ranked_data, caption = "Top 20 Most Volatile Currencies (2016-2021)")
-
-# DISCLAIMER: 
-# While we calculate multiple volatility measures, standard deviation (std_dev) remains
-# the most widely used measure in practice due to(S1 lecture notes):
-# 1. Mathematical convenience and well-understood properties
-# 2. Compatibility with normal distribution assumptions in many financial models
-# 3. Use in common risk-adjusted performance measures like Sharpe ratio
-# 4. Historical precedent and industry standardization
-#
-# However, investors should consider that standard deviation treats positive and 
-# negative returns equally, while most investors are primarily concerned with 
-# downside risk. The additional measures provided (MAD, downside_dev, d-ratio)
-# offer complementary perspectives on risk characteristics.
-```
-
-
-
-
-
-
-```{r}
-# I now want to run a for loop to get the average garch sigma over the same period for all the countries and then rank them again and see if noise is influencing the ranking
-
-#I really tried to get it to work but i couldnt manage
-
-```
-
-
-```{r}
-#Lets plot the return type persistence
-
-#Get the returns and ensure they are in xts
-zar_rts <- cncy %>%  
-    filter(date > ymd(20150101)) %>% 
-    group_by(Name) %>%  
-    mutate(ret = Price/lag(Price)-1) %>% 
-     filter(date > dplyr::first(date)) %>%               # drop first date per currency
-  ungroup() %>%  
-    mutate(Name= gsub("_Cncy", "", Name)) %>% 
-   filter(Name == "SouthAfrica") %>% 
-     filter(!is.na(ret)) %>% 
-    select(-Name, -Price) %>% 
-    tbl_xts()
-
-#Following the practical for ease of syntax
-Plotdata = cbind(zar_rts, zar_rts^2, abs(zar_rts))
-colnames(Plotdata) = c("Returns", "Returns_Sqd", "Returns_Abs")
-
-Plotdata <- 
-Plotdata %>% xts_tbl() %>% 
-gather(ReturnType, Returns, -date)
-
-ggplot(Plotdata) + 
-geom_line(aes(x = date, y = Returns, colour = ReturnType, alpha = 0.5)) + 
-    
-ggtitle("Return Type Persistence: ZAR") + 
-facet_wrap(~ReturnType, nrow = 3, ncol = 1, scales = "free") + 
-    
-guides(alpha = "none", colour = "none") + 
-fmxdat::theme_fmx()
-
-```
-
-```{r}
-forecast::Acf(zar_rts, main = "ACF: ZAR")
-```
-
-```{r}
-forecast::Acf(zar_rts^2, main = "ACF: Squared ZAR")
-```
-```{r}
-forecast::Acf(abs(zar_rts), main = "ACF: Absolute ZAR")
-```
-
-```{r}
-Box.test(coredata(zar_rts^2), type = "Ljung-Box", lag = 12)
-```
-
-```{r}
-# Now we can actually fit the univariate garch model
-cncy_rts_xts <- cncy %>%  
-    filter(date > ymd(20150101)) %>% 
-    group_by(Name) %>%  
-    mutate(ret = Price/lag(Price)-1) %>% 
-     filter(date > dplyr::first(date)) %>%               # drop first date per currency
+# Cumulative returns plots
+gg_cum <- 
+  idx %>% 
+  arrange(date) %>% 
+  group_by(Tickers) %>% 
+  mutate(
+    Rets = coalesce(ret, 0),
+    CP   = cumprod(1 + Rets)
+  ) %>% 
   ungroup() %>% 
-    mutate(Name= gsub("_Cncy", "", Name)) %>% 
-   filter(Name == "SouthAfrica") %>% 
-      filter(!is.na(ret)) %>% 
-    select(-Name, -Price) %>% 
-    tbl_xts()
+  ggplot() +
+  geom_line(aes(date, CP, colour = Tickers)) +
+  scale_colour_manual(
+    values = c(
+      "Large_Caps"   = "#1f77b4",
+      "Mid_Caps"     = "#2ca02c",
+      "Small_Caps"   = "#d62728",
+      "Unclassified" = "grey40"
+    )) +
+  labs(
+    title    = "Cumulative Returns by Cap Size Group",
+    subtitle = "Growth of 1 rand invested in each group (rebased to 1 at first observation)",
+    caption  = "Note: Each size cap is normalised to 1 at its first observation."
+  ) +
+  theme_fmx(
+    title.size    = ggpts(30),
+    subtitle.size = ggpts(5),
+    caption.size  = ggpts(25),
+    CustomCaption = TRUE
+  )
 
+gg_cum
 
-#now i follow the practical as to fit the model
+# Log cumulative plot
+gg_cum_log <- 
+  gg_cum +
+  coord_trans(y = "log10") +
+  labs(
+    title = paste0(gg_cum$labels$title, "\nLog Scaled"),
+    y     = "Log Scaled Cumulative Returns"
+  )
 
-garch11 <- 
-  
-  ugarchspec(
-    
-    variance.model = list(model = c("sGARCH","gjrGARCH","eGARCH","fGARCH","apARCH")[1], 
-                          
-    garchOrder = c(1, 1)), 
-    
-    mean.model = list(armaOrder = c(1, 0), include.mean = TRUE), 
-    
-    distribution.model = c("norm", "snorm", "std", "sstd", "ged", "sged", "nig", "ghyp", "jsu")[1])
-
-# Now to fit, I use as.matrix and the data - this way the plot functions we will use later will work.
-
-garchfit1 = ugarchfit(spec = garch11,data = cncy_rts_xts) 
-sigma <- sigma(garchfit1) %>% xts_tbl() 
+gg_cum_log
 ```
 
-```{r}
-garch_tab <- garchfit1@fit$matcoef
-kableExtra::kable(garch_tab)
+### Volatility Analysis
+
+```{r volatility-analysis-Q2, echo = TRUE}
+# Rolling returns analysis
+plotdf <- 
+  idx %>% 
+  group_by(Tickers) %>% 
+  mutate(
+    RollRets = RcppRoll::roll_prod(1 + ret, 36, fill = NA, align = "right") ^ (12 / 36) - 1
+  ) %>% 
+  group_by(date) %>% 
+  filter(any(!is.na(RollRets))) %>% 
+  ungroup()
+
+g_roll <- 
+  plotdf %>% 
+  ggplot() +
+  geom_line(aes(date, RollRets, colour = Tickers), alpha = 0.7, size = 1.25) +
+  labs(
+    title   = "Rolling 3 Year Annualized Returns by Size",
+    subtitle = "",
+    x       = "",
+    y       = "Rolling 3 year Returns (Ann.)",
+    caption = "."
+  ) +
+  theme_fmx(
+    title.size    = ggpts(30),
+    subtitle.size = ggpts(5),
+    caption.size  = ggpts(25),
+    CustomCaption = TRUE
+  ) +
+  fmx_cols()
+
+# This has broken down I don't know why 
+finplot(g_roll, x.date.dist = "1 year", x.date.type = "%Y", x.vert = TRUE,
+        y.pct = TRUE, y.pct_acc = 1)
+
+# Volatility analysis - answer to the volatility question
+plot_dlog <- 
+  idx %>% 
+  group_by(Tickers) %>% 
+  # 1. Convert simple monthly returns to log returns
+  mutate(ret = log(1 + ret)) %>% 
+  # 2. Rolling 36-month SD of log returns, annualised
+  mutate(
+    RollSD = RcppRoll::roll_sd(ret, 36, fill = NA, align = "right") * sqrt(12)
+  ) %>% 
+  ungroup() %>% 
+  filter(!is.na(RollSD)) %>% 
+  # 3. Flag the "focus" buckets and relevel for nicer colours
+  mutate(
+    SizeBucket = if_else(Tickers %in% c("Small_Caps", "Large_Caps"),
+                         "focus", "other"),
+    Tickers    = forcats::fct_relevel(Tickers, "Small_Caps", "Large_Caps")
+  )
+
+g_sd <- 
+  plot_dlog %>% 
+  ggplot() +
+  geom_line(
+    aes(date, RollSD, colour = Tickers, alpha = SizeBucket, size = SizeBucket)
+  ) +
+  # Make Small/Large bold, others dim
+  scale_alpha_manual(values = c(focus = 1,   other = 0.25), guide = "none") +
+  scale_size_manual( values = c(focus = 1.8, other = 0.7),   guide = "none") +
+  labs(
+    title   = "Rolling 3 Year Annualized SD by Size Bucket",
+    subtitle = "",
+    x       = "",
+    y       = "Rolling 3 year SD (Ann.)",
+    caption = "Note:\nAnnualized SD computed on log monthly returns."
+  ) +
+  theme_fmx(
+    title.size    = ggpts(30),
+    subtitle.size = ggpts(5),
+    caption.size  = ggpts(25),
+    CustomCaption = TRUE
+  ) +
+  fmx_cols()
+
+finplot(g_sd, x.date.dist = "1 year", x.date.type = "%Y", x.vert = TRUE,
+        y.pct = FALSE)
 ```
 
-```{r}
-sigma <- sigma(garchfit1) %>% xts_tbl() 
-colnames(sigma) <- c("date", "sigma") 
-sigma <- sigma %>% mutate(date = as.Date(date))
-
-gg <- 
-  
-ggplot() + 
-  geom_line(data = Plotdata %>% filter(ReturnType == "Returns_Sqd") %>% select(date, Returns) %>% 
-              
-              unique %>% mutate(Returns = sqrt(Returns)), aes(x = date, y = Returns)) + 
-  
-  geom_line(data = sigma, aes(x = date, y = sigma), color = "red", size = 2, alpha = 0.8) + 
-  
-  # scale_y_continuous(limits = c(0, 0.35)) + 
-  labs(title = "Comparison: Returns Sigma vs Sigma from Garch") + 
-  
-    fmxdat::theme_fmx()
-```
-
-```{r}
-fmxdat::finplot(gg, y.pct = T, y.pct_acc = 1)
-```
-
-
-GO-GARCH
-
-```{r}
-#Now I use the bbdxy to compare the volatility of the rand to global currencies
-
-g10_rts <- bbdxy %>% 
-    mutate(G10 = log(Price)-log(lag(Price))) %>% 
-   filter(date > dplyr::first(date)) %>%               # drop first date per currency
-    select(date, G10)
-
-zar_log_rts <- cncy_rts %>% 
-    filter(Name == "SouthAfrica") %>% 
-    rename("ZAR" = "dlogret") %>% 
-    select(date, ZAR) 
-
-
-
-xts_rtn<- left_join(g10_rts,zar_log_rts, by=  "date") %>% tbl_xts()
-library(rmgarch)
-
-```
-
-```{r}
-#Now set the specifications for the go garch
-```{r}
-
-```
-
-renamingdcc <- function(ReturnSeries, DCC.TV.Cor) {
-  # ReturnSeries: xts matrix of returns
-  # DCC.TV.Cor:   T x (N^2) matrix after reshaping the rcor output
-  
-  dates <- zoo::index(ReturnSeries)
-  N     <- ncol(ReturnSeries)
-  names <- colnames(ReturnSeries)
-  
-  # Build pair names in the same order as vectorised correlations
-  pairs      <- expand.grid(names, names)
-  pair_names <- paste0(pairs$Var1, "_", pairs$Var2)
-  
-  df <- as.data.frame(DCC.TV.Cor)
-  colnames(df) <- pair_names
-  df$date      <- dates
-  
-  df %>% 
-    tidyr::pivot_longer(
-      cols      = -date,
-      names_to  = "Pairs",
-      values_to = "Rho"
-    ) %>% 
-    dplyr::arrange(date)
-}
-
-# ------------------------------------------------------------------------------
-# GO GARCH specification and estimation
-# ------------------------------------------------------------------------------
-
-# Univariate GARCH spec for each series
-uspec <- ugarchspec(
-  variance.model = list(
-    model      = "gjrGARCH",
-    garchOrder = c(1, 1)
-  ),
-  mean.model = list(
-    armaOrder    = c(1, 0),
-    include.mean = TRUE
-  ),
-  distribution.model = "sstd"
-)
-
-# Replicate univariate spec across all return series
-multi_univ_garch_spec <- multispec(replicate(ncol(xts_rtn), uspec))
-
-# GO GARCH spec (multivariate)
-spec.go <- gogarchspec(
-  multi_univ_garch_spec,
-  distribution.model = "mvnorm",   # or "manig"
-  ica                = "fastica"   # fastICA
-)
-
-# Parallel cluster for speed
-cl <- makePSOCKcluster(10)
-
-# Fit univariate models jointly
-multf <- multifit(multi_univ_garch_spec, xts_rtn, cluster = cl)
-
-# Fit GO GARCH model
-fit.gogarch <- gogarchfit(
-  spec    = spec.go,
-  data    = xts_rtn,
-  solver  = "hybrid",
-  cluster = cl,
-  gfun    = "tanh",
-  maxiter1 = 40000,
-  epsilon  = 1e-08,
-  rseed    = 100
-)
-
-stopCluster(cl)
-
-# ------------------------------------------------------------------------------
-# Extract and tidy time varying correlations
-# ------------------------------------------------------------------------------
-
-gog.time.var.cor <- rcor(fit.gogarch)               # array: N x N x T
-gog.time.var.cor <- aperm(gog.time.var.cor, c(3, 2, 1))
-dim(gog.time.var.cor) <- c(
-  nrow(gog.time.var.cor),
-  ncol(gog.time.var.cor)^2
-)
-
-gog.time.var.cor <- renamingdcc(
-  ReturnSeries = xts_rtn,
-  DCC.TV.Cor   = gog.time.var.cor
-)
-
-
-```
-
-```{r}
-g2 <- ggplot(gog.time.var.cor %>% filter(grepl("ZAR_", Pairs), 
-    !grepl("_ZAR", Pairs))) + geom_line(aes(x = date, y = Rho, 
-    colour = Pairs)) + fmxdat::theme_fmx() + ggtitle("Go-GARCH: ZAR")
-
-print(g2)
-
-```
-Lastly I plot the GO-GARCH’s correlation between G10 currencies and the Rand. This graph now provides more evidence for how volatile the Rand is with the correleations over just 3 years ranging between 0.7 and 0.2.
-
-```{r}
-detach("package:rmgarch", unload=TRUE)
-```
-
-
-
-#### 5.4.2 Data and variables
-
-I describe the currency data and any additional series on carry, valuation and a dollar index, and explain how I construct the return and volatility series used in the analysis.
-
-#### 5.4.3 Conceptual and econometric approach
-
-This section outlines:
-
-How I measure volatility (for example realised volatility, GARCH conditional volatility or implied volatility).
-Which currencies I choose for comparison and why.
-How I combine volatility estimates with measures of carry, value and dollar strength to address the statements given in the question.
-
-#### 5.4.4 Thinking process and steps followed
-
-I document the sequence from data preparation, through exploratory analysis and model selection, to interpretation of the results in relation to the economic statements.
-
-#### 5.4.5 Implementation and how to run the code
-
-The main script for Question 4 is stored in Q4/code. It imports the necessary data, fits any GARCH models, computes volatility measures and generates the tables and plots used in the written answer.
-
-#### 5.4.6 Outputs
-
-Outputs in Q4/output/plots and Q4/output/results include:
-
-Comparative volatility plots and tables.
-Results relating rand behaviour to carry, value and the dollar index.
-
-Each key output is explained briefly here.
-
-#### 5.4.7 Theoretical results and references
-
-I list the main time series and GARCH results used, together with references to lecture notes and standard time series textbooks, noting which variance equations or test statistics I rely on.
-
----
-
-### Question 5: Portfolio construction
-
-```{r load-data-Q5, echo = TRUE}
-# Load readr and dplyr using pacman
-pacman::p_load(readr, dplyr)
-
-# Load and filter MAA data
-MAA <- read_rds("data/MAA.rds") %>%
-  filter(Ticker %in% c("LUACTRUU Index", "LUAGTRUU Index",
-                       "BCOMTR Index", "LP05TREH Index"))
-
-# Load and filter MSCI data
-msci <- read_rds("data/msci.rds") %>%
-  filter(Name %in% c("MSCI ACWI", "MSCI USA", "MSCI RE",
-                     "MSCI Jap", "MSCI China"))
-
-```
-
-
-
-## 1. Setup & Data Combination
-
-
-
-```{r}
-library(tidyverse)
-library(lubridate)
-library(xts)
-library(tbl2xts)
-library(RiskPortfolios)
-library(PerformanceAnalytics)
-library(quadprog)
-library(kableExtra)
-
-```
-
-
-```{r}
-#-------------------------------------------------------------------
-# 1. Load & combine MSCI + MAA into a unified df_full
-#-------------------------------------------------------------------
-
-# Assume msci and MAA already read from data/msci.rds & data/MAA.rds:
-# msci <- read_rds("data/msci.rds")
-# MAA  <- read_rds("data/MAA.rds")
-
-df_full <- bind_rows(
-  msci %>%  rename(Tickers = Name),
-  MAA  %>%  select(-Name) %>% rename(Tickers = Ticker)
-) %>%
-  arrange(date)
-```
-
----
-
-## 2. Monthly Returns, Eligibility Filters (≥5 years)
-
-We’ll:
-
-* Use **month-end prices**
-* Start from **2010-01-01** (for ≥10y lookback)
-* Drop assets with **<60 months** returns (≈5 years)
-
-```r
-#-------------------------------------------------------------------
-# 2. Build monthly returns & filter by data availability
-#-------------------------------------------------------------------
-
-monthly_df <- df_full %>%
-  filter(date >= ymd(20100101)) %>%                # at least 10y window available
+### Sector-Level Analysis
+
+```{r sector-analysis-Q2, echo = TRUE}
+# Monthly value-weighted returns by Sector and Group (size)
+idx_sector_size <- 
+  Hold_Rets_decade %>% 
+  group_by(date, Sector, Group) %>% 
+  summarise(
+    ret = sum(Weight * Return, na.rm = TRUE) / sum(Weight, na.rm = TRUE),
+    .groups = "drop"
+  ) %>% 
+  mutate(YM = format(date, "%Y%B")) %>% 
+  arrange(date) %>% 
+  group_by(Sector, Group, YM) %>% 
+  summarise(
+    date = last(date),
+    ret  = prod(1 + ret, na.rm = TRUE) - 1,
+    .groups = "drop"
+  ) %>% 
+  arrange(Sector, Group, date)
+
+# Rolling returns analysis by sector and size
+plotdf_sector <- 
+  idx_sector_size %>% 
+  group_by(Sector, Group) %>% 
+  mutate(
+    RollRets = RcppRoll::roll_prod(1 + ret, 36, fill = NA, align = "right") ^ (12 / 36) - 1
+  ) %>% 
+  group_by(date) %>% 
+  filter(any(!is.na(RollRets))) %>% 
+  ungroup()
+
+g_roll_sector <- 
+  plotdf_sector %>% 
+  ggplot() +
+  geom_line(aes(date, RollRets, colour = Group), alpha = 0.7, size = 1.25) +
+  facet_wrap(~ Sector, nrow = 2) +
+  labs(
+    title   = "Rolling 3 Year Annualized Returns by Size and Sector",
+    subtitle = "",
+    x       = "",
+    y       = "Rolling 3 year Returns (Ann.)",
+    caption = "."
+  ) +
+  theme_fmx(
+    title.size    = ggpts(30),
+    subtitle.size = ggpts(5),
+    caption.size  = ggpts(25),
+    CustomCaption = TRUE
+  ) +
+  fmx_cols()
+
+finplot(g_roll_sector, x.date.dist = "1 year", x.date.type = "%Y", x.vert = TRUE,
+        y.pct = TRUE, y.pct_acc = 1)
+
+# Sector-level volatility analysis
+plot_sd_sector <- 
+  Hold_Rets_decade %>%
+  # value-weighted daily returns per Sector × Size Group
+  group_by(date, Sector, Group) %>%
+  summarise(
+    ret = sum(Weight * Return, na.rm = TRUE) / sum(Weight, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
   mutate(YM = format(date, "%Y%B")) %>%
-  arrange(date) %>%
-  group_by(Tickers, YM) %>%
-  filter(date == last(date)) %>%                  # month-end prices
+  arrange(Sector, Group, date) %>%
+  # collapse to month-end and compute monthly returns
+  group_by(Sector, Group, YM) %>%
+  summarise(
+    date = last(date),
+    ret  = prod(1 + ret, na.rm = TRUE) - 1,
+    .groups = "drop"
+  ) %>%
+  arrange(Sector, Group, date) %>%
+  group_by(Sector, Group) %>%
+  # log monthly returns and rolling 36-month SD, annualised
+  mutate(
+    ret_log = log1p(ret),
+    RollSD  = RcppRoll::roll_sd(ret_log, 36, fill = NA, align = "right") * sqrt(12)
+  ) %>%
   ungroup() %>%
-  group_by(Tickers) %>%
-  arrange(date) %>%
-  mutate(ret = Price / lag(Price) - 1) %>%
-  ungroup() %>%
-  filter(!is.na(ret))
+  filter(!is.na(RollSD))
 
-# Filter assets with >= 60 monthly obs (5+ years)
-eligible_tickers <- monthly_df %>%
-  group_by(Tickers) %>%
-  summarise(n_months = n(), .groups = "drop") %>%
-  filter(n_months >= 60) %>%
-  pull(Tickers)
+g_sd_sector <- 
+  plot_sd_sector %>%
+  ggplot() +
+  geom_line(aes(date, RollSD, colour = Group), size = 1.3, alpha = 0.9) +
+  facet_wrap(~ Sector, nrow = 2) +
+  labs(
+    title   = "Rolling 3 Year Annualised SD by Size and Sector",
+    subtitle = "",
+    x       = "",
+    y       = "Rolling 3-year SD (Ann.)"
+  ) +
+  theme_fmx(
+    title.size    = ggpts(30),
+    subtitle.size = ggpts(5)
+  ) +
+  fmx_cols()
 
-monthly_df <- monthly_df %>%
-  filter(Tickers %in% eligible_tickers)
-
-# Wide return matrix (date + assets)
-return_mat <- monthly_df %>%
-  select(date, Tickers, ret) %>%
-  spread(Tickers, ret) %>%
-  arrange(date)
-
-# Numeric matrix for optimisation
-return_mat_Nodate <- data.matrix(return_mat[, -1])
-dates_vec         <- return_mat$date
-```
-
----
-
-## 3. Asset Classification & Constraints
-
-We classify each asset into **bond / equity / commodity** to apply group caps.
-
-```r
-#-------------------------------------------------------------------
-# 3. Asset classes & constraint structure
-#-------------------------------------------------------------------
-
-assets <- colnames(return_mat_Nodate)
-
-asset_classes <- tibble(
-  asset = assets,
-  class = case_when(
-    asset %in% c("LUACTRUU Index", "LUAGTRUU Index", "LP05TREH Index") ~ "bond",
-    asset %in% c("BCOMTR Index")                                      ~ "commodity",
-    TRUE                                                              ~ "equity"
-  )
+finplot(
+  g_sd_sector,
+  x.date.dist = "1 year",
+  x.date.type = "%Y",
+  x.vert      = TRUE,
+  y.pct       = FALSE
 )
 
-asset_classes
-```
-
-Constraints from the question:
-
-* Long-only
-* Full investment
-* Bonds + credit ≤ 25%
-* Equities ≤ 60%
-* Commodities ≤ 15%
-* Single asset ≤ 35%
-
-We’ll encode these in `solve.QP` form (**A' w ≥ b**).
-
----
-
-## 4. Covariance & Mean Estimation (10+ Year Lookback)
-
-We use **all post-2010 data** for μ and Σ (as a research-style, stable lookback), with **shrinkage covariance** for robustness.
-
-```r
-#-------------------------------------------------------------------
-# 4. Estimate µ and Σ using ≥10y data (post-2010)
-#-------------------------------------------------------------------
-
-# Shrinkage covariance estimator (better out-of-sample properties)
-Sigma_full <- RiskPortfolios::covEstimation(
-  return_mat_Nodate,
-  control = list(type = "shrink")   # shrinkage towards structured target
+# Drawdown analysis
+chart.Drawdown(
+  idxxts[, c("Large_Caps", "Mid_Caps", "Small_Caps")],
+  geometric  = TRUE,
+  legend.loc = "bottomleft",
+  colorset   = 1:3,
+  lwd        = 3,
+  main       = "Peak to trough drawdowns by size group",
+  ylab       = "Drawdown from peak"
 )
 
-# Geometric mean monthly returns, converted to annual equivalent if desired
-Mu_full <- return_mat %>%
-  summarise(across(-date, ~ prod(1 + .)^(1 / n()) - 1)) %>%
-  as_vector()
-
-Sigma_full[1:3, 1:3]
-Mu_full
-```
-
----
-
-## 5. Single-Period Mean–Variance Optimiser (QP)
-
-We create a generic `optim_foo()` that:
-
-* Takes μ, Σ, and `asset_classes`
-* Builds the **Amat / bvec** matrices
-* Solves the **MVO** with constraints via `quadprog::solve.QP`.
-
-```r
-#-------------------------------------------------------------------
-# 5. Single-period optimiser: MVO with linear constraints
-#-------------------------------------------------------------------
-
-optim_foo <- function(Sigma, Mu, asset_classes,
-                      LB = 0,         # long-only
-                      UB = 0.35,      # single-asset upper bound
-                      bond_UB = 0.25,
-                      eq_UB   = 0.60,
-                      comm_UB = 0.15) {
-
-  stopifnot(length(Mu) == ncol(Sigma))
-  N <- length(Mu)
-
-  # Indices by class
-  bond_idx <- which(asset_classes$class == "bond")
-  eq_idx   <- which(asset_classes$class == "equity")
-  comm_idx <- which(asset_classes$class == "commodity")
-
-  # Core constraints:
-  # 1) Full investment: sum w_i = 1
-  # 2) LB: w_i >= LB  => identity block
-  # 3) UB: w_i <= UB  => -w_i >= -UB
-
-  one_vec <- rep(1, N)
-  I_N     <- diag(N)
-
-  A_full <- cbind(
-    one_vec,       # equality: sum(w) = 1
-    I_N,           # lower bounds
-    -I_N           # upper bounds
-  )
-
-  b_full <- c(
-    1,                             # sum(w) = 1
-    rep(LB, N),                    # w_i >= LB
-    rep(-UB, N)                    # -w_i >= -UB  → w_i <= UB
-  )
-
-  # Group constraints: sum_{i in group} w_i <= cap  →  -sum_{i in group} w_i >= -cap
-  A_bond <- rep(0, N); if (length(bond_idx) > 0) A_bond[bond_idx] <- -1
-  A_eq   <- rep(0, N); if (length(eq_idx)   > 0) A_eq[eq_idx]     <- -1
-  A_comm <- rep(0, N); if (length(comm_idx) > 0) A_comm[comm_idx] <- -1
-
-  A_groups <- cbind(A_bond, A_eq, A_comm)
-  b_groups <- c(
-    if (length(bond_idx) > 0) -bond_UB else 0,
-    if (length(eq_idx)   > 0) -eq_UB   else 0,
-    if (length(comm_idx) > 0) -comm_UB else 0
-  )
-
-  # Final Amat and bvec
-  Amat <- cbind(A_full, A_groups)
-  bvec <- c(b_full, b_groups)
-
-  meq  <- 1  # only the first constraint (sum w = 1) is equality
-
-  # solve.QP expects Dmat positive definite; we add tiny ridge if needed
-  Dmat <- as.matrix(Sigma)
-  diag(Dmat) <- diag(Dmat) + 1e-8
-
-  w.opt <- solve.QP(
-    Dmat = Dmat,
-    dvec = Mu,
-    Amat = Amat,
-    bvec = bvec,
-    meq  = meq
-  )$solution
-
-  tibble(
-    stocks = asset_classes$asset,
-    weight = as.numeric(w.opt)
+# Helper: drawdowns for a single sector
+draw_sector_dd <- function(sec) {
+  
+  groups_to_plot <- c("Large_Caps", "Mid_Caps", "Small_Caps")
+  
+  sec_xts <- 
+    idx_sector_size %>% 
+    filter(
+      Sector == sec,
+      Group %in% groups_to_plot    # drop Unclassified
+    ) %>% 
+    select(date, Group, ret) %>% 
+    tbl_xts(cols_to_xts = ret, spread_by = Group)
+  
+  # Only use the groups that actually exist for this sector
+  avail_groups <- intersect(groups_to_plot, colnames(sec_xts))
+  
+  chart.Drawdown(
+    sec_xts[, avail_groups],
+    geometric  = TRUE,
+    legend.loc = "bottomleft",
+    colorset   = 1:length(avail_groups),
+    lwd        = 4,
+    main       = paste("Drawdowns by size -", sec),
+    ylab       = "Drawdown from peak"
   )
 }
+# I struggled to add them onto one panel
 
-# Example: single-period optimal weights from full sample
-result_static <- optim_foo(Sigma_full, Mu_full, asset_classes)
-result_static %>% kable()
+draw_sector_dd("Industrials")
+draw_sector_dd("Resources")
+draw_sector_dd("Financials")
+draw_sector_dd("Property")
 ```
 
----
+```{r}
+# Cumulative returns by sector and size
+idx_sector_size_cum <- 
+  idx_sector_size %>% 
+  arrange(Sector, Group, date) %>% 
+  group_by(Sector, Group) %>% 
+  mutate(
+    Rets = coalesce(ret, 0),
+    CP   = cumprod(1 + Rets)
+  ) %>% 
+  ungroup()
 
-## 6. Quarterly Rolling Optimiser (36m Lookback Example)
+gg_cum_sector <- 
+  idx_sector_size_cum %>% 
+  ggplot() +
+  geom_line(aes(date, CP, colour = Group)) +
+  facet_wrap(~ Sector, nrow = 2) +
+  labs(
+    title    = "Cumulative Returns by Sector and Size Group",
+    subtitle = "Growth of 1 rand invested in each sector-size group (rebased to 1 at first observation)",
+    caption  = "Note: Each sector-size group is normalised to 1 at its first observation."
+  ) +
+  theme_fmx(
+    title.size    = ggpts(30),
+    subtitle.size = ggpts(5),
+    caption.size  = ggpts(25),
+    CustomCaption = TRUE
+  ) +
+  fmx_cols()
 
-This implements **quarterly rebalancing** with a **rolling window** (e.g. 36 months).
-(You can change `LookBackSel` to 120 for a 10-year rolling window if data allows.)
+gg_cum_sector
 
-```r
-#-------------------------------------------------------------------
-# 6. Build quarterly rebalancing dates (weekday end-of-quarter proxies)
-#-------------------------------------------------------------------
-
-EOQ_datevec <- return_mat %>%
-  select(date) %>%
-  distinct() %>%
-  mutate(m = month(date)) %>%
-  filter(m %in% c(1, 4, 7, 10)) %>%   # Jan, Apr, Jul, Oct
-  group_by(year = year(date), m) %>%
-  summarise(date = last(date), .groups = "drop") %>%
-  pull(date)
-
-#-------------------------------------------------------------------
-# 7. Rolling optimiser: re-run optim_foo on each rebalance date
-#-------------------------------------------------------------------
-
-Roll_optimizer <- function(return_mat, reb_date, LookBackSel = 36, asset_classes){
-
-  end_date   <- reb_date
-  start_date <- end_date %m-% months(LookBackSel)
-
-  window_df <- return_mat %>%
-    filter(date > start_date & date <= end_date)
-
-  # Ensure sufficient observations:
-  if (nrow(window_df) < LookBackSel / 2) {
-    warning("Too few obs in window, returning NA weights.")
-    return(tibble(date = end_date, stocks = asset_classes$asset, weight = NA_real_))
-  }
-
-  R_window <- data.matrix(window_df[, -1])
-
-  Sigma_win <- RiskPortfolios::covEstimation(
-    R_window,
-    control = list(type = "shrink")
+# Log cumulative plot by sector
+gg_cum_sector_log <- 
+  gg_cum_sector +
+  coord_trans(y = "log10") +
+  labs(
+    title = paste0(gg_cum_sector$labels$title, "\nLog Scaled"),
+    y     = "Log Scaled Cumulative Returns"
   )
 
-  Mu_win <- window_df %>%
-    summarise(across(-date, ~ prod(1 + .)^(1 / n()) - 1)) %>%
-    as_vector()
+gg_cum_sector_log
 
-  weights_df <- optim_foo(Sigma_win, Mu_win, asset_classes)
+# Time series chart of sector returns using PerformanceAnalytics
+sector_xts <- 
+  idx_sector_size %>% 
+  filter(Group %in% c("Large_Caps", "Mid_Caps", "Small_Caps")) %>% 
+  select(date, Sector, Group, ret) %>% 
+  mutate(Sector_Group = paste(Sector, Group, sep = "_")) %>% 
+  select(-Sector, -Group) %>% 
+  tbl_xts(cols_to_xts = ret, spread_by = Sector_Group)
 
-  weights_df %>%
-    mutate(date = end_date, .before = 1)
-}
-
-# Run rolling optimisation on EOQ dates
-LookBackSel <- 36   # 3-year rolling window for example
-Result36 <- map_df(EOQ_datevec, ~ Roll_optimizer(return_mat, .x, LookBackSel, asset_classes))
-
-Result36 %>% head(10) %>% kable()
-```
-
----
-
-## 7. Weight Evolution Plot (Stacked Bars)
-
-```r
-#-------------------------------------------------------------------
-# 8. Visualise weights through time (stacked bars)
-#-------------------------------------------------------------------
-
-weights_xts <- Result36 %>%
-  select(date, stocks, weight) %>%
-  spread(stocks, weight) %>%
-  arrange(date) %>%
-  tbl_xts(cols_to_xts = colnames(.)[-1])
-
-chart.StackedBar(weights_xts)
-```
-
----
-
-## 8. Portfolio Performance Under Quarterly Rebalancing
-
-Compute portfolio returns by applying the rolling weights to the underlying returns.
-
-```r
-#-------------------------------------------------------------------
-# 9. Portfolio returns & performance analytics
-#-------------------------------------------------------------------
-
-# Underlying asset returns as xts
-rets_xts <- return_mat %>%
-  tbl_xts(cols_to_xts = colnames(return_mat)[-1])
-
-# Align weights to returns dates:
-# Only have weights on rebalance dates; Return.portfolio will carry them
-weights_xts_aligned <- weights_xts[index(weights_xts) %in% index(rets_xts), ]
-
-# Portfolio returns with rebalancing on explicit dates
-port_ret <- Return.portfolio(
-  R        = rets_xts,
-  weights  = weights_xts_aligned,
-  verbose  = FALSE
+# Chart time series of selected sector-size combinations
+chart.TimeSeries(
+  sector_xts[, c("Industrials_Large_Caps", "Resources_Large_Caps", "Financials_Large_Caps")],
+  main = "Large Cap Returns by Sector",
+  legend.loc = "topright",
+  colorset = 1:3,
+  lwd = 2,
+  ylab = "Monthly Returns"
 )
 
-# Performance summary: cumulative, drawdowns, etc.
-charts.PerformanceSummary(port_ret)
+# Drawdown analysis tables
+drawdown_results <- table.Drawdowns(sector_xts[, 1:6])
+drawdown_results
 
-# Some statistics table
-table.Stats(port_ret)
+# Maximum drawdown by sector-size
+max_drawdowns <- maxDrawdown(sector_xts)
+max_drawdowns
+
+# Detailed drawdown analysis
+detailed_drawdowns <- table.Drawdowns(sector_xts[, 1:6])
+detailed_drawdowns
+
+# Downside risk table
+downside_risk <- table.DownsideRisk(sector_xts[, 1:6])
+downside_risk
+
+# Find and sort drawdowns for specific sectors
+industrials_drawdowns <- findDrawdowns(sector_xts[, "Industrials_Large_Caps"])
+sorted_industrials <- sortDrawdowns(industrials_drawdowns)
+sorted_industrials
+
+# Resources sector drawdown analysis
+resources_drawdowns <- findDrawdowns(sector_xts[, "Resources_Large_Caps"])
+sorted_resources <- sortDrawdowns(resources_drawdowns)
+sorted_resources
 ```
 
+After analyzing daily holdings and returns data for JSE-listed stocks over the past decade, segmented by sector and size group, we found evidence that smaller stocks are indeed more volatile than larger ones. Rolling 3-year annualized standard deviations consistently show that Small Caps exhibit higher return variability across all sectors, with particularly sharp spikes during periods of market stress like 2020. Peak-to-trough drawdown analysis further confirms this: Small and Mid Caps experience deeper and more frequent drawdowns than Large Caps, especially in sectors like Industrials and Property, where Mid Caps saw losses exceeding 65%. Interestingly, while Large Caps are more stable, they are not immune to prolonged drawdowns, such as the 48-month decline in Financials from 2018 to 2022. These findings highlight the importance of size and sector in understanding risk dynamics and suggest that portfolio construction should account for both cyclical sensitivity and recovery behavior across market segments.
 
-
-
-
-**End of README**
-
-
-
-
-# Description
-
-This folder was created by first creating a folder on your desktop -
-copying the adress and then simply running in any instance of R:
-
-`{r, eval = F} fmxdat::make_project()`
-
-Next, download <https://www.fmx.nfkatzke.com/FMX_data_2021.zip> and
-unzip its contents into the data/ folder in this root.
-
-> NB: add data/ to your gitignore file when creating a repository.
-> Ensure you do not commit the data folder please.
-
-Next, create sub-folders for each question by using, e.g.:
-
-\`\`\`{r}
-
-Do this fo all 5 questions inside ecah question folder we have the following subfolders code , data , output ( subfolders inside this are plots and results )
-
-# PDF Texevier:
-
-Texevier::create_template(directory = “Questions”, template_name =
-“Q1” )
-
-# HTML Texevier:
-
-Texevier::create_template_html(directory = “Questions”, template_name =
-“Q2” )
-
-\`\`\`
-
-Now add the relevant data for each question into the respective data/
-folders in the different Question folders.
-
-Check that your .gitignore file ignores all folders starting with data.
-
-> NB - this README (at the root of your folder) - is what I will be
-> grading.
-
-> Space out code per question in this README - detailing your steps and
-> thinking.
-
-> Folders in Questions/… should not contain READMEs - I will only be
-> looking at their output (pdf / html).
-
-> THIS README should contain and describe the code you used in your
-> analyses.
-
-Good luck and enjoy the practical!
-
-Nico
