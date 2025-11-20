@@ -742,7 +742,9 @@ draw_sector_dd("Financials")
 draw_sector_dd("Property")
 ```
 
-### Statistical Analysis Tables
+### Statistical Analysis Tables 
+
+(Added extra from data-camp maybe unnecessary)
 
 ```{r statistical-tables-Q2, echo = TRUE}
 # Time series chart of sector returns using PerformanceAnalytics
@@ -795,6 +797,8 @@ sorted_resources
 
 
 Using a  Rolling 3-year annualized standard deviations consistently show that Small Caps exhibit higher return variability across all sectors, with particularly sharp spikes during periods of market stress like 2020. Peak-to-trough drawdown analysis further confirms this: Small and Mid Caps experience deeper and more frequent drawdowns than Large Caps, especially in sectors like Industrials and Property, where Mid Caps saw losses exceeding 65%. Interestingly, while Large Caps are more stable, they are not immune to prolonged drawdowns, such as the 48-month decline in Financials from 2018 to 2022. These findings highlight the importance of size and sector in understanding risk dynamics and suggest that portfolio construction should account for both cyclical sensitivity and recovery behavior across market segments.
+
+Seeing that we have individual stocks ( maybe we could have assessed the most volatility and which sectors they are found by their sizes but I was unsure how to do that , plus I felt my solution was way all over the place trying to include all code so I excluded it)
 
 
 
