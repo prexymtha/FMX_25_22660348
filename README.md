@@ -1032,13 +1032,10 @@ place trying to include all code so I excluded it)
 
 We are evaluating whether the South African Rand (ZAR) has been among
 the most volatile currencies in recent years, which requires comparing
-its behavior to other currencies. Historically, the ZAR tends to perform
+its behavior to other currencies.And if  hiistorically, the ZAR has performed
 well during periods when G10 currency carry trades are favorable and
-when currency valuations are relatively cheap—these can be analyzed
-separately and jointly. Additionally, the ZAR often benefits during
-times of Dollar strength, reflecting global risk-on sentiment. You have
-full discretion in choosing how to measure volatility, which currencies
-to compare, and how to structure your analysis.
+when currency valuations are relatively cheap—these .Lastly if  the ZAR often benefits during
+times of Dollar strength.
 
 #### Libraries and data
 
