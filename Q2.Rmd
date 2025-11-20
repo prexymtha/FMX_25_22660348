@@ -226,7 +226,7 @@ gg_cum <-
   )
 
 # Level plot
-gg_cum
+#gg_cum
 
 # Log cumulative plot
 gg_cum_log <- 
@@ -237,7 +237,7 @@ gg_cum_log <-
     y     = "Log Scaled Cumulative Returns"
   )
 
-gg_cum_log
+#gg_cum_log
 
 ```
 
