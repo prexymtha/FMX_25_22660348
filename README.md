@@ -1028,22 +1028,9 @@ most volatility and which sectors they are found by their sizes but I
 was unsure how to do that , plus I felt my solution was way all over the
 place trying to include all code so I excluded it)
 
-Second part (peak and troughs )
-
-We need three graphs that have returns ( of whatever format on the y
-axis) and year on the x axis since we have already annualised it’s easy
-graph one needs to have a legend by size group ( small caps , large ,
-medium and other ) , the second by sector and the last by size and
-sector . Group has NA which aren’t necessarily missing values but rather
-unclassified so we shall call them that to remove confusion
-
-start with the one for return against size groups
-
 ### Question 3
 
 ### Question 4: Volatility and GARCH estimates
-
-#### 5.4.1 Aim of the question
 
 - We are assessing whether the South African Rand (ZAR) has been one of
   the most volatile currency over the past few years.(since it says one
@@ -1418,7 +1405,7 @@ garchfit1
     ## 4    50     56.46       0.2162
     ## 
     ## 
-    ## Elapsed time : 0.180439
+    ## Elapsed time : 0.355077
 
 ``` r
 garch_tab <- garchfit1@fit$matcoef
